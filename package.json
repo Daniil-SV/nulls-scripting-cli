@@ -1,0 +1,80 @@
+{
+  "name": "nulls-brawl-scripting-cli",
+  "version": "1.0.0",
+  "description": "Tool for nulls brawl scripting development",
+  "main": "dist/cli.js",
+  "bin": {
+    "nbs": "./bin/run.js"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "oclif.manifest.json"
+  ],
+  "scripts": {
+    "generate:api": "pnpm generate:scripting && pnpm generate:connect",
+    "generate:scripting": "pnpm --package=openapi-typescript@7.13.0 --package=typescript@5.9.3 dlx openapi-typescript schema/openapi.yaml -o src/api/scripting/schema.d.ts",
+    "generate:connect": "pnpm --package=openapi-typescript@7.13.0 --package=typescript@5.9.3 dlx openapi-typescript schema/openapi.connect.yaml -o src/api/connect/schema.d.ts",
+    "build": "tsc -p tsconfig.json && tsc-alias -p tsconfig.json",
+    "prepack": "pnpm build",
+    "start": "node dist/cli.js",
+    "start:dev": "pnpm build && tsx bin/dev.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "12.16.1",
+      "onFail": "warn"
+    }
+  },
+  "packageManager": "pnpm@12.16.1",
+  "type": "module",
+  "devDependencies": {
+    "@biomejs/biome": "2.6.3",
+    "@types/node": "^26.6.6",
+    "@types/uuid-validate": "^0.0.3",
+    "oclif": "^6.0.15",
+    "openapi-typescript": "^7.13.0",
+    "tsc-alias": "^1.9.9",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "@bomb.sh/tty": "^0.10.0",
+    "@clack/prompts": "^1.8.1",
+    "@oclif/core": "^5.1.10",
+    "@oclif/plugin-help": "^7.0.6",
+    "@parcel/watcher": "^2.6.0",
+    "@sindresorhus/base62": "^1.0.0",
+    "@yume-chan/adb": "^2.6.4",
+    "@yume-chan/adb-server-node-tcp": "^2.5.2",
+    "base62": "^3.0.0",
+    "conf": "^16.0.0",
+    "lilconfig": "^3.1.4",
+    "node-machine-id": "^1.1.12",
+    "open": "^11.0.4",
+    "openapi-fetch": "^0.17.0",
+    "openapi-typescript-helpers": "^0.1.0",
+    "uuid-validate": "^0.0.3"
+  },
+  "oclif": {
+    "bin": "nbs",
+    "commands": "./dist/commands",
+    "plugins": [
+      "@oclif/plugin-help"
+    ],
+    "dirname": "nulls-brawl-scripting-cli",
+    "topicSeparator": " ",
+    "topics": {
+      "content": {
+        "description": "manage scripts content"
+      }
+    },
+    "hooks": {
+      "init": "./dist/hooks/init/init"
+    }
+  }
+}

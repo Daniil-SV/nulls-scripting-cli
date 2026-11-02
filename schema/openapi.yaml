@@ -1,0 +1,1089 @@
+openapi: 3.1.0
+info:
+  title: NT Scripting API
+  version: 0.1.0
+  summary: Reverse-engineered API of scripting.nulls.gg (Null's Brawl script storage/editor).
+  description: |
+    ## Authentication
+
+    Session is a **cookie**:
+
+    * cookie name: `auth_token`
+    * value: HS256 JWT, payload `{"sub":"<user uuid>","exp":<unix>}`, TTL **86400 s (24 h)**
+    * attributes: `HttpOnly; SameSite=Lax; Path=/`
+    * there is **no refresh endpoint** — re-authenticate when it expires
+
+    ### Obtaining a session
+
+    **A. Null's Connect (recommended, works headless)**
+
+    1. `GET https://connect.nulls.gg/api/auth/login.v2?email=<email>&game=laser&locale=EN&can_register=true`
+       → `{"email":...,"pin_required":true}`, PIN is emailed
+    2. same call with `&pin=<pin>` → `{"email":...,"token":"<connect bearer jwt>"}`
+    3. `GET https://connect.nulls.gg/api/oauth/info?client_id=9&redirect_uri=https://scripting.nulls.gg/connect`
+    4. `GET https://connect.nulls.gg/api/oauth/token?client_id=9&player_id=<player id>&game=laser&scope=openid%20email&nonce=<n>&state=<s>`
+       → `{"id_token":"<jwt>","state":...}`
+    5. `POST /auth/connect` with `{"id_token":"<jwt>"}` → sets `auth_token` cookie
+
+    **B. Browser (implicit OIDC)** — open
+    `https://connect.nulls.gg/authorize?scope=openid%20email&response_type=id_token&client_id=9&redirect_uri=https://scripting.nulls.gg/connect`
+    and take `id_token` from the redirect URL, then step 5.
+
+    **C. Username + password** — `POST /auth/login`.
+
+    ## Notes
+
+    * Anonymous access is allowed for script metadata, releases, parameters and user profiles;
+      script **content** always requires a session (or a share token).
+    * Validation failures return `400` with either `{"error":"Validation error: ..."}` or a plain-text
+      axum deserializer message (`Json deserialize error: ...`, `Query deserialize error: ...`).
+
+servers:
+  - url: https://scripting.nulls.gg/api
+
+tags:
+  - name: auth
+  - name: users
+  - name: scripts
+  - name: maps
+
+security:
+  - cookieAuth: []
+
+paths:
+  /auth/login:
+    post:
+      tags: [auth]
+      operationId: login
+      summary: Username/password login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: { type: string }
+                password: { type: string }
+      responses:
+        "200":
+          description: "Session created (`Set-Cookie: auth_token=...; HttpOnly; SameSite=Lax; Path=/; Max-Age=86400`)"
+          headers:
+            Set-Cookie:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: {}
+          x-verified: false
+        "400":
+          description: Missing/invalid field (plain text deserializer error)
+          content:
+            text/plain:
+              schema:
+                {
+                  type: string,
+                  example: "Json deserialize error: missing field `username` at line 1 column 2",
+                }
+          x-verified: true
+        "401":
+          description: Bad credentials
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { error: Invalid credentials }
+          x-verified: true
+
+  /auth/register:
+    post:
+      tags: [auth]
+      operationId: register
+      summary: Email/password registration
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, username, password]
+              properties:
+                name: { type: string, minLength: 3 }
+                username: { type: string, minLength: 3 }
+                password: { type: string, minLength: 8 }
+      responses:
+        "200":
+          description: Account created + session cookie
+          headers:
+            Set-Cookie:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: {}
+          x-verified: false
+        "409":
+          description: Username taken (frontend maps this to `auth.usernameTaken`)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+          x-verified: false
+
+  /auth/connect:
+    post:
+      tags: [auth]
+      operationId: connectLogin
+      summary: Exchange a Null's Connect `id_token` for a session
+      security: []
+      description: |
+        * `200` + `{"sign_up_token": "..."}` → Connect identity is not bound to a scripting account yet;
+          finish with `POST /auth/connect/register`.
+        * `200` + user object → already bound, cookie set (observed).
+        * `201` → treated by the SPA as "logged in, no body".
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id_token]
+              properties:
+                id_token:
+                  type: string
+                  description: HS256 JWT from `connect.nulls.gg/api/oauth/token`. Claims `iss=https://connect.nulls.gg`, `sub=<connect uid>`, `aud=9`, `email`, `email_verified`, 30 min TTL.
+      responses:
+        "200":
+          description: Logged in (user object) or sign-up required (`sign_up_token`)
+          headers:
+            Set-Cookie:
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/User"
+                  - type: object
+                    required: [sign_up_token]
+                    properties:
+                      sign_up_token: { type: string }
+          x-verified: true
+        "201":
+          description: Logged in, empty body
+          x-verified: false
+        "400":
+          description: Invalid or expired id_token
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              examples:
+                invalid: { value: { error: Invalid OIDC id_token } }
+          x-verified: true
+        "409":
+          description: Conflict (frontend maps to `?connect_error=email-already-bound`)
+          x-verified: false
+
+  /auth/connect/register:
+    post:
+      tags: [auth]
+      operationId: connectRegister
+      summary: Finish Connect sign-up with the `sign_up_token`
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sign_up_token, name, username]
+              properties:
+                sign_up_token: { type: string }
+                name: { type: string }
+                username: { type: string }
+      responses:
+        "200":
+          description: Account created + session cookie
+          headers:
+            Set-Cookie:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: {}
+          x-verified: false
+        "400":
+          description: Bad/expired sign-up token
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              examples:
+                invalid: { value: { error: Invalid sign_up_token } }
+                expired: { value: { error: Sign up token expired } }
+          x-verified: true
+        "409":
+          description: Username taken
+          x-verified: false
+
+  /auth/logout:
+    post:
+      tags: [auth]
+      operationId: logout
+      summary: Clear the session cookie
+      responses:
+        "200":
+          description: Cookie cleared (`Max-Age=0`)
+          x-verified: true
+
+  /users/me:
+    get:
+      tags: [users]
+      operationId: getCurrentUser
+      summary: Current session user
+      responses:
+        "200":
+          description: Authenticated user
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PrivateUser" }
+          x-verified: true
+        "401":
+          description: No/invalid cookie (empty body)
+          x-verified: true
+
+  /users/{userId}:
+    get:
+      tags: [users]
+      operationId: getUser
+      summary: Public user profile
+      description: Public, no session needed. `username` is accepted by the path parser but returns 404 in practice (verified) — use the uuid.
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      responses:
+        "200":
+          description: Public profile
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PublicUser" }
+          x-verified: true
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { error: Not found }
+          x-verified: true
+
+  /users/{userId}/password:
+    put:
+      tags: [users]
+      operationId: changePassword
+      summary: Set or change the password
+      description: |
+        Send `{new_password}` when `has_password=false` (first-time set), `{password, new_password}` otherwise.
+        A wrong `password` yields `401` (frontend maps it to "wrong password").
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [new_password]
+              properties:
+                password:
+                  type: string
+                  description: Current password, required only when one is already set
+                new_password:
+                  type: string
+                  minLength: 8
+      responses:
+        "200":
+          description: Password updated
+          x-verified: false
+        "204":
+          description: Password updated (no body)
+          x-verified: false
+        "401":
+          description: Wrong current password
+          x-verified: false
+
+  /users/{userId}/scripts:
+    get:
+      tags: [users, scripts]
+      operationId: listUserScripts
+      summary: Scripts by author (public, published only)
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      responses:
+        "200":
+          description: Scripts owned by the user (empty array for unknown user)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [scripts]
+                properties:
+                  scripts:
+                    type: array
+                    items: { $ref: "#/components/schemas/ScriptSummary" }
+          x-verified: true
+
+  /users/{userId}/favorites:
+    get:
+      tags: [users, scripts]
+      operationId: listFavorites
+      summary: Favorited scripts (public)
+      description: For an anonymous caller `is_favorite` is still reported from the author's perspective; for the owner every entry is `true`.
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      responses:
+        "200":
+          description: Favorite scripts
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [scripts]
+                properties:
+                  scripts:
+                    type: array
+                    items: { $ref: "#/components/schemas/ScriptSummary" }
+          x-verified: true
+    post:
+      tags: [users, scripts]
+      operationId: addFavorite
+      summary: Add a script to favorites
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [script_id]
+              properties:
+                script_id: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Added (empty body)
+          x-verified: true
+        "400":
+          description: Malformed uuid (plain text)
+          content:
+            text/plain:
+              schema: { type: string }
+          x-verified: true
+        "500":
+          description: Already favorited — unique-constraint leak
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { error: Database error }
+          x-verified: true
+    delete:
+      tags: [users, scripts]
+      operationId: removeFavorite
+      summary: Remove a script from favorites
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [script_id]
+              properties:
+                script_id: { type: string, format: uuid }
+      responses:
+        "204":
+          description: Removed (also when it was not favorited)
+          x-verified: true
+
+  /users/{userId}/maps:
+    get:
+      tags: [users, maps]
+      operationId: listUserMaps
+      summary: User's saved maps
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      responses:
+        "200":
+          description: Maps
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [maps]
+                properties:
+                  maps:
+                    type: array
+                    items: { $ref: "#/components/schemas/UserMap" }
+          x-verified: true
+        "401":
+          description: Session required
+          x-verified: true
+
+  /users/{userId}/audit:
+    get:
+      tags: [users]
+      operationId: listUserAudit
+      summary: Audit log (staff only)
+      description: Always returned 401 for a normal account, including for its own uuid (verified). Treated as admin-only.
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      responses:
+        "200":
+          description: Audit events
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [events]
+                properties:
+                  events:
+                    type: array
+                    items: { $ref: "#/components/schemas/AuditEvent" }
+          x-verified: false
+        "401":
+          description: Not authorized
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { error: The user is unauthorized for this action }
+          x-verified: true
+
+  /scripts:
+    get:
+      tags: [scripts]
+      operationId: listScripts
+      summary: All published scripts
+      description: Returns the full published catalog (3583 entries at capture time, ~1.4 MB). No pagination/filter params were observed.
+      responses:
+        "200":
+          description: Published scripts
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [scripts]
+                properties:
+                  scripts:
+                    type: array
+                    items: { $ref: "#/components/schemas/ScriptSummary" }
+          x-verified: true
+        "401":
+          description: Session required
+          x-verified: true
+    post:
+      tags: [scripts]
+      operationId: createScript
+      summary: Create a draft script
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, content]
+              properties:
+                name: { type: string, minLength: 3, maxLength: 32 }
+                content: { type: string }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScriptId" }
+          x-verified: true
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+          x-verified: true
+        "401":
+          description: Session required
+          x-verified: true
+
+  /scripts/{scriptId}:
+    get:
+      tags: [scripts]
+      operationId: getScript
+      summary: Script metadata (public)
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/ScriptId"
+      responses:
+        "200":
+          description: Script metadata
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Script" }
+          x-verified: true
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { error: Script not found }
+          x-verified: true
+    delete:
+      tags: [scripts]
+      operationId: deleteScript
+      summary: Delete a script (author only)
+      parameters:
+        - $ref: "#/components/parameters/ScriptId"
+      responses:
+        "204":
+          description: Deleted
+          x-verified: true
+        "401":
+          description: Session required
+          x-verified: true
+
+  /scripts/{scriptId}/content:
+    get:
+      tags: [scripts]
+      operationId: getScriptContent
+      summary: Script source
+      description: |
+        * no query → latest draft content, **session required** (401 anonymously, even for published scripts)
+        * `?revision=<release id>` → content of that published release; id is a `releases[].id`
+        * `?token=<share token>` → intended anonymous access; every token minted during testing returned
+          `403 Your mother is probably fucked :(` (server-side check appears broken — needs re-verification)
+      parameters:
+        - $ref: "#/components/parameters/ScriptId"
+        - name: revision
+          in: query
+          required: false
+          schema: { type: integer, format: int64 }
+        - name: token
+          in: query
+          required: false
+          description: Share token from `POST /scripts/{id}/share`
+          schema: { type: string }
+      responses:
+        "200":
+          description: Content
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScriptContent" }
+          x-verified: true
+        "400":
+          description: Non-numeric revision (plain text)
+          content:
+            text/plain:
+              schema:
+                {
+                  type: string,
+                  example: "Query deserialize error: invalid digit found in string",
+                }
+          x-verified: true
+        "401":
+          description: Session required
+          x-verified: true
+        "403":
+          description: Share token rejected
+          content:
+            text/plain:
+              schema:
+                { type: string, example: "Your mother is probably fucked :(" }
+          x-verified: true
+        "404":
+          description: Script or revision not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+          x-verified: true
+    put:
+      tags: [scripts]
+      operationId: updateScriptContent
+      summary: Save the draft source
+      parameters:
+        - $ref: "#/components/parameters/ScriptId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                content: { type: string }
+      responses:
+        "200":
+          description: Saved (echoes the id)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScriptId" }
+          x-verified: true
+        "400":
+          description: Validation error (e.g. content too long)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+          x-verified: true
+
+  /scripts/{scriptId}/publish:
+    post:
+      tags: [scripts]
+      operationId: publishScript
+      summary: Publish the current draft
+      description: |
+        Creates a release; its id becomes the revision id used by `GET /content?revision=`.
+        Frontend expects `{uuid}` but production returns `{script_id}` (verified).
+        Rapid repeated calls returned `400` with an empty body — suspected publish quota/rate limit.
+      parameters:
+        - $ref: "#/components/parameters/ScriptId"
+      responses:
+        "200":
+          description: Published
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScriptId" }
+          x-verified: true
+        "400":
+          description: Rejected (empty body observed after repeated publishes)
+          x-verified: true
+
+  /scripts/{scriptId}/name:
+    put:
+      tags: [scripts]
+      operationId: renameScript
+      summary: Rename a script
+      parameters:
+        - $ref: "#/components/parameters/ScriptId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, minLength: 3, maxLength: 32 }
+      responses:
+        "204":
+          description: Renamed
+          x-verified: true
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example:
+                {
+                  error: "Validation error: Script name is too short (minimum 3 characters)",
+                }
+          x-verified: true
+
+  /scripts/{scriptId}/description:
+    put:
+      tags: [scripts]
+      operationId: setScriptDescription
+      summary: Set the description
+      parameters:
+        - $ref: "#/components/parameters/ScriptId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [description]
+              properties:
+                description: { type: string, minLength: 32, maxLength: 1024 }
+      responses:
+        "204":
+          description: Saved
+          x-verified: true
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example:
+                {
+                  error: "Validation error: Script description is too short (minimum 32 characters)",
+                }
+          x-verified: true
+    delete:
+      tags: [scripts]
+      operationId: deleteScriptDescription
+      summary: Clear the description
+      parameters:
+        - $ref: "#/components/parameters/ScriptId"
+      responses:
+        "204":
+          description: Cleared
+          x-verified: true
+
+  /scripts/{scriptId}/map:
+    put:
+      tags: [scripts]
+      operationId: setScriptMap
+      summary: Attach or detach a user map
+      description: 'Send `{"user_map_id": null}` to detach.'
+      parameters:
+        - $ref: "#/components/parameters/ScriptId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_map_id]
+              properties:
+                user_map_id:
+                  type: [string, "null"]
+                  format: uuid
+      responses:
+        "200":
+          description: Updated (empty body)
+          x-verified: true
+
+  /scripts/{scriptId}/share:
+    post:
+      tags: [scripts]
+      operationId: createShareToken
+      summary: Mint a share token for the current revision
+      description: |
+        Returns an HS256 JWT `{script_id, revision_id, exp}` with a **30 min** TTL.
+        Fails with `{"error":"author does not have connect"}` when the author never bound Null's Connect.
+        Rapid repeated calls returned `400` with an empty body (suspected quota/rate limit).
+      parameters:
+        - $ref: "#/components/parameters/ScriptId"
+      responses:
+        "200":
+          description: Token
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [token]
+                properties:
+                  token: { type: string }
+          x-verified: true
+        "400":
+          description: Rejected (empty body) or author has no Connect binding
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+          x-verified: true
+
+  /scripts/{scriptId}/parameters:
+    get:
+      tags: [scripts]
+      operationId: listScriptParameters
+      summary: Script parameters (public)
+      description: "Global parameter definitions are returned with `script_id: null`."
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/ScriptId"
+      responses:
+        "200":
+          description: Parameters
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [parameters]
+                properties:
+                  parameters:
+                    type: array
+                    items: { $ref: "#/components/schemas/ScriptParameter" }
+          x-verified: true
+
+  /scripts/{scriptId}/releases:
+    get:
+      tags: [scripts]
+      operationId: listScriptReleases
+      summary: Published releases (public)
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/ScriptId"
+      responses:
+        "200":
+          description: Releases, newest first
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [releases]
+                properties:
+                  releases:
+                    type: array
+                    items: { $ref: "#/components/schemas/ScriptRelease" }
+          x-verified: true
+        "404":
+          description: Script not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+          x-verified: true
+
+  /maps:
+    post:
+      tags: [maps]
+      operationId: createMap
+      summary: Save a map reference
+      description: |
+        `map_internal_id` is the `roomname` from
+        `https://link.nulls.gg/nulls-brawl/createAndJoinRoom?roomname=<id>`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [map_internal_id, name]
+              properties:
+                map_internal_id: { type: string }
+                name: { type: string, minLength: 3, maxLength: 64 }
+      responses:
+        "200":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [user_map]
+                properties:
+                  user_map: { $ref: "#/components/schemas/UserMap" }
+          x-verified: true
+
+  /maps/{mapId}:
+    patch:
+      tags: [maps]
+      operationId: updateMap
+      summary: Change the map reference
+      parameters:
+        - $ref: "#/components/parameters/MapId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [map_internal_id]
+              properties:
+                map_internal_id: { type: string }
+      responses:
+        "200":
+          description: Updated (empty body)
+          x-verified: true
+    delete:
+      tags: [maps]
+      operationId: deleteMap
+      summary: Delete a saved map
+      parameters:
+        - $ref: "#/components/parameters/MapId"
+      responses:
+        "204":
+          description: Deleted
+          x-verified: true
+
+  /maps/{mapId}/name:
+    put:
+      tags: [maps]
+      operationId: renameMap
+      summary: Rename a saved map
+      parameters:
+        - $ref: "#/components/parameters/MapId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, minLength: 3, maxLength: 64 }
+      responses:
+        "200":
+          description: Renamed (empty body)
+          x-verified: true
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: auth_token
+      description: Session JWT (`sub` = user uuid, 24 h TTL), obtained from `/auth/login`, `/auth/register`, `/auth/connect` or `/auth/connect/register`.
+
+  parameters:
+    UserId:
+      name: userId
+      in: path
+      required: true
+      description: User uuid. Username is parsed but resolves to 404 in practice.
+      schema: { type: string, format: uuid }
+
+    ScriptId:
+      name: scriptId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+    MapId:
+      name: mapId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+
+    ScriptId:
+      type: object
+      required: [script_id]
+      properties:
+        script_id: { type: string, format: uuid }
+
+    User:
+      description: Returned by `/auth/connect`. Exact field set unverified; same shape as `/users/me` is likely.
+      allOf:
+        - $ref: "#/components/schemas/PrivateUser"
+
+    PrivateUser:
+      type: object
+      required: [user_id, name, username, has_password, has_connect_email]
+      properties:
+        user_id: { type: string, format: uuid }
+        name: { type: string }
+        username: { type: string }
+        has_password:
+          type: boolean
+          description: Whether an email/password login exists
+        has_connect_email:
+          type: boolean
+          description: Whether a Null's Connect identity is bound
+
+    PublicUser:
+      type: object
+      required: [user_id, name, username]
+      properties:
+        user_id: { type: string, format: uuid }
+        name: { type: string }
+        username: { type: string }
+
+    ScriptSummary:
+      type: object
+      required:
+        [
+          script_id,
+          name,
+          description,
+          created_at,
+          updated_at,
+          published_at,
+          author_uuid,
+          author_name,
+          is_favorite,
+        ]
+      properties:
+        script_id: { type: string, format: uuid }
+        name: { type: string }
+        description:
+          type: [string, "null"]
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        published_at:
+          type: [string, "null"]
+          format: date-time
+        author_uuid: { type: string, format: uuid }
+        author_name: { type: string }
+        is_favorite:
+          type: boolean
+          description: Favorite flag from the requesting session's perspective
+
+    Script:
+      description: "`GET /scripts/{id}` — summary plus map binding."
+      allOf:
+        - $ref: "#/components/schemas/ScriptSummary"
+        - type: object
+          required: [user_map_id, user_map_internal_id]
+          properties:
+            user_map_id:
+              type: [string, "null"]
+              format: uuid
+            user_map_internal_id:
+              type: [string, "null"]
+
+    ScriptContent:
+      type: object
+      required: [content]
+      properties:
+        content: { type: string, description: Luau source }
+
+    ScriptParameter:
+      type: object
+      required: [id, script_id, group_id, name, type, default_value, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        script_id:
+          type: [string, "null"]
+          format: uuid
+        group_id: { type: string, format: uuid }
+        name: { type: string }
+        type:
+          type: string
+          enum: [int, bool]
+        default_value: { type: integer }
+        min_value:
+          type: [integer, "null"]
+        max_value:
+          type: [integer, "null"]
+        created_at: { type: string, format: date-time }
+
+    ScriptRelease:
+      type: object
+      required: [id, description, created_at]
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Also used as `?revision=` for content
+        description:
+          type: [string, "null"]
+        created_at: { type: string, format: date-time }
+
+    UserMap:
+      type: object
+      required: [user_map_id, user_id, internal_id, name, created_at]
+      properties:
+        user_map_id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        internal_id:
+          type: string
+          description: Map id from link.nulls.gg roomname
+        name: { type: string }
+        created_at: { type: string, format: date-time }
+
+    AuditEvent:
+      description: never observed (staff-only endpoint)
+      type: object
+      required:
+        [occurred_at, actor_id, target_id, event_type, changes, metadata]
+      properties:
+        occurred_at: { type: string, format: date-time }
+        actor_id: { type: string, format: uuid }
+        target_id: { type: string, format: uuid }
+        event_type:
+          type: string
+          examples: [ScriptPublish, UserCreate]
+        changes:
+          type: object
+          additionalProperties: true
+        metadata:
+          type: object
+          additionalProperties: true

@@ -1,0 +1,412 @@
+openapi: 3.1.0
+info:
+  title: Null's Connect API
+  version: 0.1.0
+  summary: Reverse-engineered API of connect.nulls.gg (Null's ID provider)
+  description: |
+    Auth: `Authorization: Bearer <token>` where the token comes from `auth/login.v2`
+    (RS256 JWT, payload `{uid, game, iat, exp}`, TTL 30 min). Optional `X-NT-Device`.
+
+    Error contract:
+    * `403` `{"detail":"Not authenticated"}` — FastAPI auth dependency
+    * `418` `{"error_type":"<snake_case>"}` — domain errors (`unknown_game`, `email_invalid`, `pin_invalid`, `pin_expired`, ...)
+    * `422` `{"detail":[{"type":"missing","loc":["query","email"],...}]}` — validation
+    * `502/503/504` — "gate down" (game backend unavailable)
+
+servers:
+  - url: https://connect.nulls.gg/api
+
+tags:
+  - name: auth
+  - name: oauth
+  - name: games
+  - name: settings
+
+paths:
+  /auth/login.v2:
+    get:
+      tags: [auth]
+      operationId: connectLogin
+      summary: Email + PIN login (two-step)
+      security: []
+      description: |
+        1. Call without `pin` → PIN is emailed, response `{"email":...,"pin_required":true}`
+        2. Call again with `pin` → `{"email":...,"token":"<bearer>"}`
+      parameters:
+        - name: email
+          in: query
+          required: true
+          schema: { type: string, format: email }
+        - name: pin
+          in: query
+          required: false
+          description: Omit on the first call to trigger the email
+          schema: { type: string }
+        - name: game
+          in: query
+          required: true
+          schema: { type: string }
+        - name: locale
+          in: query
+          required: false
+          schema: { type: string, default: EN, examples: [EN, RU, TR] }
+        - name: can_register
+          in: query
+          required: false
+          schema: { type: boolean, default: true }
+      responses:
+        "200":
+          description: PIN required or bearer token issued
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    required: [email, pin_required]
+                    properties:
+                      email: { type: string }
+                      pin_required: { const: true }
+                  - type: object
+                    required: [email, token]
+                    properties:
+                      email: { type: string }
+                      token:
+                        { type: string, description: RS256 JWT, 30 min TTL }
+          x-verified: true
+        "418":
+          description: Domain error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DomainError" }
+              examples:
+                unknown_game: { value: { error_type: unknown_game } }
+                email_invalid: { value: { error_type: email_invalid } }
+          x-verified: true
+        "422":
+          description: Missing query parameter
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ValidationError" }
+          x-verified: true
+
+  /oauth/info:
+    get:
+      tags: [oauth]
+      operationId: oauthAppInfo
+      summary: Resolve an OAuth client
+      description: Requires a logged-in Connect session. `redirect_uri` is validated against the client config.
+      parameters:
+        - name: client_id
+          in: query
+          required: true
+          schema: { type: string, examples: ["9"] }
+        - name: redirect_uri
+          in: query
+          required: true
+          schema:
+            {
+              type: string,
+              format: uri,
+              examples: ["https://scripting.nulls.gg/connect"],
+            }
+      responses:
+        "200":
+          description: App info
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [display_name]
+                properties:
+                  display_name:
+                    {
+                      type: string,
+                      examples: ["NB Scripting (Danila Schelkov)"],
+                    }
+          x-verified: true
+        "403":
+          description: Not authenticated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotAuthenticated" }
+          x-verified: true
+
+  /oauth/token:
+    get:
+      tags: [oauth]
+      operationId: oauthToken
+      summary: Issue an OIDC id_token
+      description: |
+        The provider only supports `response_type=id_token`. The returned `id_token` is an **HS256**
+        JWT with claims `iss=https://connect.nulls.gg`, `sub=<connect uid>`, `aud=<client_id>`,
+        `iat`, `exp` (30 min), `nonce`, `email`, `email_verified`.
+        Any extra returned fields are merged into the redirect URI as query params.
+      parameters:
+        - name: client_id
+          in: query
+          required: true
+          schema: { type: string }
+        - name: player_id
+          in: query
+          required: false
+          description: Game account to authorise as; omit to use the current account
+          schema: { type: string }
+        - name: game
+          in: query
+          required: false
+          schema: { type: string }
+        - name: scope
+          in: query
+          required: false
+          schema: { type: string, default: "openid email" }
+        - name: nonce
+          in: query
+          required: false
+          schema: { type: string }
+        - name: state
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        "200":
+          description: id_token (+ echoed state)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id_token]
+                properties:
+                  id_token: { type: string }
+                  state:
+                    type: [string, "null"]
+          x-verified: true
+        "403":
+          description: Not authenticated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotAuthenticated" }
+          x-verified: true
+
+  /games/links:
+    get:
+      tags: [games]
+      operationId: listGameLinks
+      summary: Game accounts linked to the Connect identity
+      parameters:
+        - name: game
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Linked accounts
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [links]
+                properties:
+                  links:
+                    type: array
+                    items: { $ref: "#/components/schemas/GameLink" }
+                  show_tos: { type: boolean }
+          x-verified: true
+        "403":
+          description: Not authenticated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotAuthenticated" }
+          x-verified: true
+
+  /games/token:
+    get:
+      tags: [games]
+      operationId: gameAccountToken
+      summary: Session token for one game account
+      parameters:
+        - name: game
+          in: query
+          required: true
+          schema: { type: string }
+        - name: player_id
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Token
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [token]
+                properties:
+                  token: { type: string }
+          x-verified: false
+
+  /games/bind:
+    get:
+      tags: [games]
+      operationId: bindGameAccount
+      summary: Bind a game account using a bind token
+      parameters:
+        - name: bind_token
+          in: query
+          required: true
+          schema: { type: string }
+        - name: game
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Bound
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [token]
+                properties:
+                  token: { type: string }
+          x-verified: false
+
+  /games/refresh_tokens:
+    get:
+      tags: [games]
+      operationId: refreshGameTokens
+      summary: Refresh the stored game account tokens
+      responses:
+        "200":
+          description: Refreshed
+          content:
+            application/json:
+              schema: {}
+          x-verified: false
+
+  /games/transfer:
+    get:
+      tags: [games]
+      operationId: transferAccounts
+      summary: Transfer progress between accounts
+      parameters:
+        - name: player_ids
+          in: query
+          required: true
+          description: Comma-separated list
+          schema: { type: string }
+        - name: dest_token
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Transfer result
+          content:
+            application/json:
+              schema: {}
+          x-verified: false
+
+  /settings/get:
+    get:
+      tags: [settings]
+      operationId: getSettings
+      summary: Account settings
+      responses:
+        "200":
+          description: Settings
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [user_id]
+                properties:
+                  user_id: { type: integer, examples: [15158728] }
+                  vk_client_id: { type: [integer, "null"] }
+                  tg_bind_url: { type: [string, "null"], format: uri }
+          x-verified: true
+        "403":
+          description: Not authenticated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotAuthenticated" }
+          x-verified: true
+
+  /settings/accept_terms:
+    get:
+      tags: [settings]
+      operationId: acceptTerms
+      summary: Accept the terms of service
+      responses:
+        "200":
+          description: Accepted
+          content:
+            application/json:
+              schema: {}
+          x-verified: false
+
+  /settings/unlink/tg:
+    get:
+      tags: [settings]
+      operationId: unlinkTelegram
+      summary: Unlink Telegram
+      responses:
+        "200":
+          description: Unlinked
+          content:
+            application/json:
+              schema: {}
+          x-verified: false
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    NotAuthenticated:
+      type: object
+      required: [detail]
+      properties:
+        detail: { const: Not authenticated }
+
+    DomainError:
+      type: object
+      required: [error_type]
+      properties:
+        error_type:
+          type: string
+          examples:
+            [unknown_game, email_invalid, pin_invalid, pin_expired, forbidden]
+
+    ValidationError:
+      type: object
+      required: [detail]
+      properties:
+        detail:
+          type: array
+          items:
+            type: object
+            properties:
+              type: { type: string }
+              loc: { type: array, items: { type: string } }
+              msg: { type: string }
+              input: {}
+
+    GameLink:
+      type: object
+      required: [game, player_id, player_info, is_current]
+      properties:
+        game: { type: string, examples: [laser] }
+        player_id: { type: string }
+        player_info:
+          type: object
+          properties:
+            tag: { type: string }
+            name: { type: string }
+            score: { type: integer }
+        is_current: { type: boolean }
+
+security:
+  - bearerAuth: []

@@ -1,0 +1,21 @@
+# credentials — never commit
+auth.json
+auth.*.json
+.env
+.env.*
+
+# deps / build
+node_modules/
+dist/
+build/
+coverage/
+tmp/
+*.tsbuildinfo
+
+# editor / os
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+recon/
+/.nbsrc.json
