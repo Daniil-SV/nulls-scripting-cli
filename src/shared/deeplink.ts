@@ -176,11 +176,6 @@ export interface BuildBattleLinkOptions {
 	scriptId: string;
 
 	/**
-	 * Script share token
-	 */
-	shareToken: string;
-
-	/**
 	 * Overrides battle parameter value by parameter name or uuid
 	 */
 	parameters?: BattleParameterValue[];
@@ -278,18 +273,14 @@ function resolveValue(
 export async function buildBattleOptions(
 	options: BuildBattleLinkOptions,
 ): Promise<BattleRoomCreateData> {
-	const { scriptId, shareToken, parameters, mapCode: mapInternalId } = options;
+	const { scriptId, parameters, mapCode: mapInternalId } = options;
 
 	if (!scriptId.trim()) throw new DeeplinkError("Missing script id");
-	if (!shareToken.trim()) {
-		throw new DeeplinkError(
-			"Missing share token. The site always mints one with `POST /scripts/{id}/share` first",
-		);
-	}
 
 	const base = await loadBattleParameters(scriptId);
 	validateParameterOverrides(parameters ?? [], base);
 
+	const shareToken = await getShareToken(options.scriptId);
 	const data: BattleRoomCreateData = {
 		realm: BATTLE_REALM,
 		script: buildShareUrl(scriptId, shareToken),
@@ -298,6 +289,30 @@ export async function buildBattleOptions(
 	if (mapInternalId) data.map = mapInternalId;
 
 	return data;
+}
+
+const SHARED_TOKEN_TTL = 15 * 60 * 1000;
+const cachedSharedTokens: Map<string, { created: number; token: string }> =
+	new Map();
+async function getShareToken(scriptId: string) {
+	const existing = cachedSharedTokens.get(scriptId);
+	if (
+		existing !== undefined &&
+		existing.created + SHARED_TOKEN_TTL > Date.now()
+	) {
+		return existing.token;
+	}
+
+	const { token } = await Api.post("/scripts/{scriptId}/share", {
+		params: { path: { scriptId } },
+	});
+
+	cachedSharedTokens.set(scriptId, {
+		created: Date.now(),
+		token,
+	});
+
+	return token;
 }
 
 const cachedParameters: Map<string, BattleParameter[]> = new Map();

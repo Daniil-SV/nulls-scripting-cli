@@ -70,7 +70,6 @@ async function deeplinkFor(script: ScriptSummary): Promise<string> {
 
 	return await buildBattleLink({
 		scriptId: script.script_id,
-		shareToken: token,
 		parameters: config.parameters ?? [],
 	});
 }

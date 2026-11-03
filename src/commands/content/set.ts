@@ -47,7 +47,6 @@ export default class ContentSet extends BaseCommand {
 	};
 
 	private scriptId!: string;
-	private token!: string;
 
 	protected async setContent(id: string, content: string) {
 		content = content.replace(/^\uFEFF/, "");
@@ -67,7 +66,6 @@ export default class ContentSet extends BaseCommand {
 		clearScreen();
 		const url = await buildBattleLink({
 			scriptId: this.scriptId,
-			shareToken: this.token,
 			parameters: config.parameters ?? [],
 		});
 
@@ -122,14 +120,6 @@ export default class ContentSet extends BaseCommand {
 		const path = resolve(args.path);
 		const content = readFileSync(args.path, { encoding: "utf8" });
 		this.scriptId = await this.setContent(name, content);
-
-		// Update share token
-		if (flags.open) {
-			const response = await Api.post("/scripts/{scriptId}/share", {
-				params: { path: { scriptId: this.scriptId } },
-			});
-			this.token = response.token;
-		}
 
 		if (flags.watch) {
 			await this.startWatch(name, path, flags.open);

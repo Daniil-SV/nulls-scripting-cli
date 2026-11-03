@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { intro, isCancel, log, outro, select } from "@clack/prompts";
-import { Adb, AdbServerClient, AdbTransport } from "@yume-chan/adb";
+import { Adb, AdbServerClient } from "@yume-chan/adb";
 import { AdbServerNodeTcpConnector } from "@yume-chan/adb-server-node-tcp";
 import config from "@/config.js";
 
