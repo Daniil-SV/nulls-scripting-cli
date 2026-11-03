@@ -181,18 +181,12 @@ importers:
       '@parcel/watcher':
         specifier: ^2.6.0
         version: 2.6.0
-      '@sindresorhus/base62':
-        specifier: ^1.0.0
-        version: 1.0.0
       '@yume-chan/adb':
         specifier: ^2.6.4
         version: 2.6.4
       '@yume-chan/adb-server-node-tcp':
         specifier: ^2.5.2
         version: 2.5.2
-      base62:
-        specifier: ^3.0.0
-        version: 3.0.0
       conf:
         specifier: ^16.0.0
         version: 16.0.0
@@ -853,10 +847,6 @@ packages:
     resolution: {integrity: sha512-dEyx4uHh6Pc6ZkdU9Xe8rA4h12Odq6QKU/fqseBn07xwVwskhHiF3KHhqmw5BR+jAiFTvKTmwCafFql/k1pSzA==}
     engines: {node: '>=18.17.0', npm: '>=9.5.0'}
 
-  '@sindresorhus/base62@1.0.0':
-    resolution: {integrity: sha512-TeheYy0ILzBEI/CO55CP6zJCSdSWeRtGnHy8U8dWSUH4I68iqTsy7HkMktR4xakThc9jotkPQUXT4ITdbV7cHA==}
-    engines: {node: '>=18'}
-
   '@sindresorhus/is@5.6.0':
     resolution: {integrity: sha512-TV7t8GKYaJWsn00tFDqBw8+Uqmr8A0fRU1tvTQhyZzGv0sJCGRQL3JGMI3ucuKo3XIZdUP+Lx7/gh2t3lewy7g==}
     engines: {node: '>=14.16'}
@@ -1110,10 +1100,6 @@ packages:
   balanced-match@4.0.4:
     resolution: {integrity: sha512-BLrgEcRTwX2o6gGxGOCNyMvGSp35YofuYzw9h1IMTRmKqttAZZVU67bdb9Pr2vUHA8+j3i2tJfjO6C6+4myGTA==}
     engines: {node: 18 || 20 || >=22}
-
-  base62@3.0.0:
-    resolution: {integrity: sha512-dE5M7GCUopwruZVnbKnQB4Jhr5gnF9EK2PZtGXkcCEwCMGkZIJfq2bk3H3bGUOcMmaSHglCIBqbzBnye3CG16g==}
-    engines: {node: '>=18.0.0'}
 
   binary-extensions@2.3.0:
     resolution: {integrity: sha512-Ceh+7ox5qe7LJuLHoY0feh3pHuUDHAcRUeyL2VYghZwfpkNIy/+8Ocg0a3UuSoYzavmylwuLWQOf3hl0jjMMIw==}
@@ -2519,8 +2505,6 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@sindresorhus/base62@1.0.0': {}
-
   '@sindresorhus/is@5.6.0': {}
 
   '@smithy/core@3.38.0':
@@ -2721,8 +2705,6 @@ snapshots:
   balanced-match@1.0.2: {}
 
   balanced-match@4.0.4: {}
-
-  base62@3.0.0: {}
 
   binary-extensions@2.3.0: {}
 

@@ -51,7 +51,7 @@ export class AdbServer {
 		}
 	}
 
-	private ensureRunning() {
+	ensureRunning() {
 		const command = this.config.command;
 		if (command === undefined) return;
 
@@ -127,7 +127,6 @@ export class AdbServer {
 	}
 
 	async getDevice(silent: boolean = false) {
-		this.ensureRunning();
 		await this.connectDevice();
 		const devices = await this.client.getDevices();
 		let target: AdbServerClient.Device | undefined;

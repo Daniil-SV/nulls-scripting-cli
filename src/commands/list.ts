@@ -27,6 +27,7 @@ import { spinner } from "@clack/prompts";
 import { Flags } from "@oclif/core";
 import openUrl from "open";
 import Api, { type ScriptSummary } from "@/api/scripting/index.js";
+import config, { initializeConfig } from "@/config.js";
 import device from "@/device/index.js";
 import { RequireLogin } from "@/shared/auth.js";
 import { BaseCommand } from "@/shared/command.js";
@@ -67,14 +68,10 @@ async function deeplinkFor(script: ScriptSummary): Promise<string> {
 		shareTokens.set(script.script_id, token);
 	}
 
-	const { parameters } = await Api.get("/scripts/{scriptId}/parameters", {
-		params: { path: { scriptId: script.script_id } },
-	});
-
-	return buildBattleLink({
+	return await buildBattleLink({
 		scriptId: script.script_id,
 		shareToken: token,
-		parameters,
+		parameters: config.parameters ?? [],
 	});
 }
 
@@ -126,6 +123,7 @@ interface TtyContext {
 interface ContextAction {
 	key: KeyCode[];
 	label: string;
+	private: boolean;
 	callback: (script: ScriptSummary) => boolean | Promise<boolean>;
 }
 
@@ -159,7 +157,6 @@ export default class List extends BaseCommand {
 	static height = process.stdout.rows ?? 24;
 
 	private tty!: TtyContext;
-	private scripts: ScriptSummary[] = [];
 	private selected = 0;
 	private offset = 0;
 	private input = "";
@@ -173,6 +170,16 @@ export default class List extends BaseCommand {
 		index: -1,
 		time: 0,
 	};
+
+	private useScriptsLibrary = true;
+	private allScripts: ScriptSummary[] = [];
+	private myScripts: ScriptSummary[] = [];
+
+	private get scripts() {
+		if (this.useScriptsLibrary) return this.allScripts;
+
+		return this.myScripts;
+	}
 
 	private async openScriptWebsite(script: ScriptSummary) {
 		await openUrl(`${SCRIPTING_URL}/scripts/${script.script_id}/view`);
@@ -191,6 +198,7 @@ export default class List extends BaseCommand {
 			await this.toggleTTY();
 			try {
 				clearScreen();
+				await device.ensureDevice();
 				await device.openUrl(url);
 			} finally {
 				// Always restore the list, even if opening the deeplink failed.
@@ -224,11 +232,25 @@ export default class List extends BaseCommand {
 		return true;
 	}
 
+	private async removeScript(script: ScriptSummary): Promise<boolean> {
+		if (script.author_uuid !== Api.user.uuid) return true;
+
+		await Api.delete("/scripts/{scriptId}", {
+			params: { path: { scriptId: script.script_id } },
+		});
+		const index = this.myScripts.findIndex(
+			(value) => value.script_id === script.script_id,
+		);
+		this.myScripts.splice(index, 1);
+		return true;
+	}
+
 	private get contextActions(): ContextAction[] {
 		return [
 			{
 				key: ["Enter"],
 				label: "open website",
+				private: false,
 				callback: (script) => {
 					return this.openScriptWebsite(script);
 				},
@@ -236,6 +258,7 @@ export default class List extends BaseCommand {
 			{
 				key: ["o"],
 				label: "open friendly battle",
+				private: false,
 				callback: (script) => {
 					return this.openFriendlyBattle(script);
 				},
@@ -243,8 +266,17 @@ export default class List extends BaseCommand {
 			{
 				key: ["f"],
 				label: "add to favorite",
+				private: false,
 				callback: (script) => {
 					return this.toggleFavorite(script);
+				},
+			},
+			{
+				key: ["r"],
+				label: "remove script",
+				private: true,
+				callback: (script) => {
+					return this.removeScript(script);
 				},
 			},
 		] as const;
@@ -286,12 +318,14 @@ export default class List extends BaseCommand {
 						return false;
 					}
 
-					let uuid = value;
-					let label = value;
+					const uuid = value;
+					const label = value;
 
 					if (value.toLowerCase() === "me") {
-						uuid = Api.user.uuid;
-						label = "me";
+						this.useScriptsLibrary = false;
+						return true;
+					} else {
+						this.useScriptsLibrary = true;
 					}
 
 					this.setFilter(
@@ -450,6 +484,7 @@ export default class List extends BaseCommand {
 		}
 
 		const selectedScript = active[this.selected];
+		const authorScript = selectedScript?.author_uuid === Api.user.uuid;
 		const descLines = this.descriptionLines(selectedScript);
 		const help =
 			" i/k up/down | j/l left/right | enter open | / commands | q quit";
@@ -486,7 +521,7 @@ export default class List extends BaseCommand {
 			{ color: C.accent },
 		);
 
-		const listLayout = open("list", {
+		const listHead = open("list", {
 			layout: {
 				width: grow(),
 				height: fixed(listRows),
@@ -558,6 +593,38 @@ export default class List extends BaseCommand {
 			clip: { horizontal: true, vertical: true },
 		});
 
+		const actionsHead = open("actions", {
+			layout: { width: grow(), height: fixed(1), gap: 1 },
+			clip: { horizontal: true },
+		});
+
+		let actions: { id?: string; label: string }[];
+		if (this.state === State.Command) {
+			actions = this.suggestions.map((action) => ({
+				id: action.name,
+				label: `[${action.name}] ${action.args}`,
+			}));
+		} else {
+			const active = this.contextActions.filter((action) => {
+				if (action.private && !authorScript) return false;
+
+				return true;
+			});
+
+			actions = active.map((action) => ({
+				id: action.key[0],
+				label: `[${action.key[0]}] ${action.label}`,
+			}));
+		}
+
+		const actionLayout = actions.flatMap((action) => [
+			open(`action:${action.id}`, {
+				layout: { padding: { left: 1, right: 1 } },
+			}),
+			text(action.label, { color: C.action }),
+			close(),
+		]);
+
 		return [
 			// Head block
 			root,
@@ -566,7 +633,7 @@ export default class List extends BaseCommand {
 			close(),
 
 			// Items block
-			listLayout,
+			listHead,
 			...grid,
 			close(),
 
@@ -579,27 +646,8 @@ export default class List extends BaseCommand {
 			),
 			close(),
 
-			// Actions block
-			open("actions", {
-				layout: { width: grow(), height: fixed(1), gap: 1 },
-				clip: { horizontal: true },
-			}),
-			...(this.state === State.Command
-				? this.suggestions.map((action) => ({
-						id: action.name,
-						label: `[${action.name}] ${action.args}`,
-					}))
-				: this.contextActions.map((action) => ({
-						id: action.key[0],
-						label: `[${action.key[0]}] ${action.label}`,
-					}))
-			).flatMap((action) => [
-				open(`action:${action.id}`, {
-					layout: { padding: { left: 1, right: 1 } },
-				}),
-				text(action.label, { color: C.action }),
-				close(),
-			]),
+			actionsHead,
+			...actionLayout,
 			close(),
 
 			// Status block
@@ -644,10 +692,7 @@ export default class List extends BaseCommand {
 	private draw() {
 		this.clamp();
 		const { output } = this.tty.term.render(this.buildLayout());
-		// `render()` returns a view into the WASM module's shared output buffer.
-		// Windows terminal writes are asynchronous, so the next render would
-		// overwrite the bytes before they reach the terminal. Copy first.
-		process.stdout.write(output.slice());
+		process.stdout.write(output);
 	}
 
 	public async toggleTTY(): Promise<boolean> {
@@ -983,20 +1028,26 @@ export default class List extends BaseCommand {
 	@RequireLogin
 	public async run(): Promise<void> {
 		const { flags } = await this.parse(List);
+		initializeConfig(flags.project);
+
 		const interactive =
 			!flags.json && process.stdin.isTTY && process.stdout.isTTY;
 
 		const spin = interactive ? spinner() : undefined;
 		spin?.start("Loading scripts");
-		const { scripts } = await Api.get("/scripts");
-		spin?.stop(`${scripts.length} scripts`);
+		const library = await Api.get("/scripts");
+		spin?.stop(`${library.scripts.length} scripts`);
 
 		if (!interactive) {
-			this.log(JSON.stringify(scripts, null, 2));
+			this.log(JSON.stringify(library.scripts, null, 2));
 			return;
 		}
 
-		this.scripts = scripts;
+		const userLibrary = await Api.get("/users/{userId}/scripts", {
+			params: { path: { userId: Api.user.uuid } },
+		});
+		this.allScripts = library.scripts;
+		this.myScripts = userLibrary.scripts;
 		await this.runLoop();
 	}
 }

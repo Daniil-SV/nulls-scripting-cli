@@ -1,6 +1,5 @@
 import { Command, Flags, type Interfaces } from "@oclif/core";
 import { describeError } from "@/errors.js";
-import { initializeConfig } from "../config.js";
 
 export abstract class BaseCommand extends Command {
 	static override baseFlags = {
@@ -8,21 +7,9 @@ export abstract class BaseCommand extends Command {
 			char: "p",
 			description: "Path to the project configuration",
 			required: false,
+			helpGroup: "GLOBAL",
 		}),
 	};
-
-	override async init() {
-		await super.init();
-
-		const { flags } = await this.parse({
-			flags: this.ctor.baseFlags,
-			args: {},
-			enableJsonFlag: false,
-			strict: false,
-		});
-
-		initializeConfig(flags["project"]);
-	}
 
 	protected override async catch(err: Interfaces.CommandError): Promise<void> {
 		const report = describeError(err);

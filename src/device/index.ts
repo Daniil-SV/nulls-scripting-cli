@@ -8,6 +8,10 @@ class UserDevice {
 		this.device = new AdbServer();
 	}
 
+	async ensureDevice() {
+		this.device.ensureRunning();
+	}
+
 	async openUrl(url: string) {
 		await this.device.openUrl(url);
 	}

@@ -4,6 +4,7 @@ import {
 	lilconfigSync,
 	type OptionsSync,
 } from "lilconfig";
+import type { BattleParameterValue } from "./shared/deeplink.js";
 
 export interface NbsAndroidDebugBridge {
 	/**
@@ -46,6 +47,11 @@ export interface NbsConfig {
 
 	/** Process run config for watcher and deeplink's */
 	process?: Partial<NbsProcessConfig>;
+
+	/**
+	 * An array of friendly battle room parameters
+	 */
+	parameters: BattleParameterValue[];
 }
 
 function initializeBaseConfig() {

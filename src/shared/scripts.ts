@@ -15,25 +15,26 @@ export async function findScript(
 	filtering: ScriptFiltering = ScriptFiltering.None,
 	silent: boolean = false,
 ): Promise<ScriptSummary | undefined> {
-	const { scripts } = await Api.get("/scripts");
-	let filtered = scripts.filter((summary) => {
+	let scripts: ScriptSummary[];
+	if (filtering === ScriptFiltering.Author) {
+		const response = await Api.get("/users/{userId}/scripts", {
+			params: { path: { userId: Api.user.uuid } },
+		});
+		scripts = response.scripts;
+	} else {
+		const response = await Api.get("/scripts");
+		scripts = response.scripts;
+	}
+
+	const filtered = scripts.filter((summary) => {
 		return summary.name.includes(name);
 	});
 
-	switch (filtering) {
-		case ScriptFiltering.Author: {
-			filtered = filtered.filter(
-				(summary) => summary.author_uuid === Api.user.uuid,
-			);
-		}
-	}
-
 	if (filtered.length === 0) return undefined;
+	if (filtered.length === 1 || silent) return filtered[0];
 	if (filtered.length > 10) {
 		throw new Error("Too many scripts found! Try to clarify your request");
 	}
-
-	if (filtered.length === 1 || silent) return filtered[0];
 
 	const selected = (await select({
 		message: "Found multiple scripts. Please select one",
@@ -89,6 +90,7 @@ export async function resolveScriptId(
 	target = await findScript(
 		id,
 		readAccess ? ScriptFiltering.None : ScriptFiltering.Author,
+		true,
 	);
 
 	return target;
