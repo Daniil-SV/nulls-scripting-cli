@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { log, spinner } from "@clack/prompts";
+import { spinner } from "@clack/prompts";
 import { Args, Flags } from "@oclif/core";
 import watcher from "@parcel/watcher";
 import Api from "@/api/scripting/index.js";
@@ -70,8 +70,8 @@ export default class ContentSet extends BaseCommand {
 			shareToken: this.token,
 			parameters: config.parameters ?? [],
 		});
-		log.warn(url);
-		device.openUrl(url);
+
+		await device.openUrl(url);
 		clearScreen();
 	}
 
@@ -95,6 +95,20 @@ export default class ContentSet extends BaseCommand {
 				spin.message("Continue watching...");
 			}
 		});
+
+		if (open) {
+			while (true) {
+				const running = await device.ensureNullsRunning();
+
+				if (!running) {
+					spin.message("Application is not running, reloading...");
+					await this.openScript();
+					spin.message("Continue watching...");
+				}
+
+				await new Promise((resolve) => setTimeout(resolve, 1500));
+			}
+		}
 	}
 
 	@RequireLogin

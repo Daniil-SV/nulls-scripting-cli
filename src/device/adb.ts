@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { intro, isCancel, log, outro, select } from "@clack/prompts";
-import { Adb, AdbServerClient } from "@yume-chan/adb";
+import { Adb, AdbServerClient, AdbTransport } from "@yume-chan/adb";
 import { AdbServerNodeTcpConnector } from "@yume-chan/adb-server-node-tcp";
 import config from "@/config.js";
 
@@ -17,6 +17,8 @@ export class AdbServer {
 	});
 
 	private client = new AdbServerClient(this.connector);
+
+	private cachedTransport?: Adb;
 
 	private get config() {
 		return config.process?.adb ?? {};
@@ -91,10 +93,12 @@ export class AdbServer {
 		// `<deviceAddress>:<devicePort>`, so use that as the default target
 		const name = this.config.defaultDevice ?? this.deviceSerial;
 
-		if (name !== undefined) {
-			log.step(`Waiting for device ${name}...`);
-		} else {
-			log.step(`Waiting for any device...`);
+		if (!silent) {
+			if (name !== undefined) {
+				log.step(`Waiting for device ${name}...`);
+			} else {
+				log.step(`Waiting for any device...`);
+			}
 		}
 
 		while (true) {
@@ -126,6 +130,25 @@ export class AdbServer {
 		}
 	}
 
+	private async execute(args: string[]): Promise<string> {
+		const transport = await this.getTransport();
+		return await transport.subprocess.noneProtocol.spawnWaitText(args);
+	}
+
+	async isAppRunning(name: string) {
+		const pid = await this.execute(["pidof", name]);
+		if (pid.length === 0) {
+			return false;
+		}
+
+		const dump = await this.execute(["dumpsys", "activity", "activities"]);
+		const match = dump.match(
+			/(?:topResumedActivity|mResumedActivity)=ActivityRecord\{[^}]*?\bu\d+\s+([^/\s]+)\//,
+		);
+
+		return match?.[1] === name;
+	}
+
 	async getDevice(silent: boolean = false) {
 		await this.connectDevice();
 		const devices = await this.client.getDevices();
@@ -143,22 +166,28 @@ export class AdbServer {
 	}
 
 	async getTransport() {
-		const device = await this.getDevice();
+		if (this.cachedTransport !== undefined) return this.cachedTransport;
+		const device = await this.getDevice(true);
 		if (device === undefined) {
 			throw new AdbError("Target device not found");
 		}
 
 		const transport = await this.client.createTransport(device);
-		const adb = new Adb(transport);
-		return adb;
+		this.cachedTransport = new Adb(transport);
+		return this.cachedTransport;
 	}
 
 	async openUrl(url: string) {
 		intro("adb");
 
-		const transport = await this.getTransport();
-		await transport.subprocess.noneProtocol.spawnWaitText([
-			`am start -W -a android.intent.action.VIEW -d '${url.replace("'", "'\\''")}'`,
+		await this.execute([
+			"am",
+			"start",
+			"-W",
+			"-a",
+			"android.intent.action.VIEW",
+			"-d",
+			`'${url.replace("'", "'\\''")}'`,
 		]);
 
 		outro("intent started");
