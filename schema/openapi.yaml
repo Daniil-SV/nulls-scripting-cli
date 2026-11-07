@@ -634,8 +634,7 @@ paths:
       operationId: publishScript
       summary: Publish the current draft
       description: |
-        Creates a release; its id becomes the revision id used by `GET /content?revision=`.
-        Frontend expects `{uuid}` but production returns `{script_id}` (verified).
+        Creates a release. It's id becomes the revision id used by `GET /content?revision=`.
         Rapid repeated calls returned `400` with an empty body — suspected publish quota/rate limit.
       parameters:
         - $ref: "#/components/parameters/ScriptId"

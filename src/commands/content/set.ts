@@ -1,10 +1,10 @@
 import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { spinner } from "@clack/prompts";
+import { dirname } from "node:path";
+import { log, spinner } from "@clack/prompts";
 import { Args, Flags } from "@oclif/core";
 import watcher from "@parcel/watcher";
 import Api from "@/api/scripting/index.js";
-import config, { initializeConfig } from "@/config.js";
+import config, { initializeConfig, resolvePath } from "@/config.js";
 import device from "@/device/index.js";
 import { RequireLogin } from "@/shared/auth.js";
 import { BaseCommand } from "@/shared/command.js";
@@ -16,7 +16,7 @@ export default class ContentSet extends BaseCommand {
 	static override args = {
 		path: Args.file({
 			description: "Script file path",
-			required: true,
+			required: false,
 			exists: true,
 		}),
 	};
@@ -27,7 +27,7 @@ export default class ContentSet extends BaseCommand {
 	];
 
 	static override flags = {
-		id: Flags.string({
+		name: Flags.string({
 			name: "UUID or name",
 			description: "Script UUID or name to set content for",
 			required: false,
@@ -48,7 +48,8 @@ export default class ContentSet extends BaseCommand {
 
 	private scriptId!: string;
 
-	protected async setContent(id: string, content: string) {
+	static async setContent(path: string, id: string) {
+		let content = readFileSync(path, { encoding: "utf8" });
 		content = content.replace(/^\uFEFF/, "");
 
 		const scriptId = await resolveScriptIdOrCreate(id, content);
@@ -87,8 +88,7 @@ export default class ContentSet extends BaseCommand {
 				if (event.type === "delete") continue;
 
 				spin.message("Found changes. Updating...");
-				const content = readFileSync(path, { encoding: "utf8" });
-				await this.setContent(name, content);
+				await ContentSet.setContent(event.path, name);
 				if (open) this.openScript();
 				spin.message("Continue watching...");
 			}
@@ -114,13 +114,15 @@ export default class ContentSet extends BaseCommand {
 		const { args, flags } = await this.parse(ContentSet);
 		initializeConfig(flags.project);
 
-		const name = flags.id ?? config.id;
-		if (name === undefined) throw new Error("Failed to resolve script name");
+		const name = flags.name ?? config.name;
+		if (name === undefined) {
+			this.error("Failed to resolve script name");
+		}
 
-		const path = resolve(args.path);
-		const content = readFileSync(args.path, { encoding: "utf8" });
-		this.scriptId = await this.setContent(name, content);
+		const path = resolvePath(args.path);
+		log.step(`Updating from "${path}"`);
 
+		this.scriptId = await ContentSet.setContent(path, name);
 		if (flags.watch) {
 			await this.startWatch(name, path, flags.open);
 		} else if (flags.open) {

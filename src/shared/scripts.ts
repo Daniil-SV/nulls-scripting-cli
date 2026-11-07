@@ -98,7 +98,7 @@ export async function resolveScriptId(
 
 export async function resolveScriptIdOrCreate(
 	id: string,
-	content: string,
+	content?: string,
 ): Promise<string> {
 	const target = await resolveScriptId(id, "w");
 
@@ -108,7 +108,7 @@ export async function resolveScriptIdOrCreate(
 
 	if (target === undefined) {
 		const { script_id } = await Api.post("/scripts", {
-			body: { name: id, content },
+			body: { name: id, content: content ?? "" },
 		});
 		return script_id;
 	}

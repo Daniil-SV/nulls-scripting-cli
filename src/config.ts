@@ -1,4 +1,5 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import {
 	type LilconfigResult,
 	lilconfigSync,
@@ -43,7 +44,10 @@ export interface NbsProcessConfig {
 
 export interface NbsConfig {
 	/** Script name or UUID */
-	id: string;
+	name: string;
+
+	/** Script filepath */
+	path: string;
 
 	/** Process run config for watcher and deeplink's */
 	process?: Partial<NbsProcessConfig>;
@@ -60,8 +64,19 @@ function initializeBaseConfig() {
 	});
 
 	const result = searcher.search();
+	if (result === null) return {};
 
-	return result?.config ?? {};
+	const config = (result?.config ?? {}) as Partial<NbsConfig>;
+
+	// Trying to get path from package.json
+	if (config.path === undefined) {
+		const parsed = JSON.parse(
+			readFileSync(result.filepath, { encoding: "utf8" }),
+		);
+		config.path = parsed["main"];
+	}
+
+	return config;
 }
 
 const config: Partial<NbsConfig> = {};
@@ -86,6 +101,29 @@ export function initializeConfig(path?: string) {
 		...base,
 		...result.config,
 	});
+}
+
+export function resolvePath(override?: string): string {
+	let path: string | undefined;
+	if (override !== undefined) {
+		path = resolve(override);
+	}
+
+	if (config.path !== undefined) {
+		path = resolve(config.path);
+	}
+
+	if (path !== undefined) {
+		if (!existsSync(path)) {
+			throw new Error(`Script at path ${path} doesn't exist`);
+		}
+
+		return path;
+	}
+
+	throw new Error(
+		"Failed to resolve script path! Make sure to create proper nbs config or provide filepath as argument",
+	);
 }
 
 export default config;

@@ -190,12 +190,13 @@ export default class List extends BaseCommand {
 		const url = await deeplinkFor(script);
 
 		this.status = "waiting device...";
-		await device.ensureDevice();
 
 		// adb can print logs, start the emulator, wait for a device and show a
 		// device picker, so always hide the list while it runs
 		if (this.ttyActive) {
 			await this.toggleTTY();
+			await device.ensureDevice();
+
 			try {
 				clearScreen();
 				await device.openUrl(url);
@@ -204,6 +205,7 @@ export default class List extends BaseCommand {
 				await this.toggleTTY();
 			}
 		} else {
+			await device.ensureDevice();
 			await device.openUrl(url);
 		}
 
