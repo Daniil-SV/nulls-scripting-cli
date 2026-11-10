@@ -141,7 +141,7 @@
 		"openapi-fetch": "^0.17.0",
 		"openapi-typescript-helpers": "^0.1.0",
 		"uuid-validate": "^0.0.3",
-		"which": "^6.0.1"
+		"which": "^7.0.0"
 	},
 	"oclif": {
 		"bin": "nbs",
