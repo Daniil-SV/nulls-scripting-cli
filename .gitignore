@@ -11,11 +11,12 @@ build/
 coverage/
 tmp/
 *.tsbuildinfo
+*.tgz
+oclif.manifest.json
 
 # editor / os
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
-recon/
 /.nbsrc.json

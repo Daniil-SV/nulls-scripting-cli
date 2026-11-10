@@ -32,7 +32,7 @@ export interface NbsAndroidDebugBridge {
 	 * Port of the emulator's adb daemon. When set, nbs connects to
 	 * `deviceAddress:devicePort` before looking for devices.
 	 *
-	 * Emulator specific: MuMu uses 16384, others often use 5555.
+	 * Common values include 5555 and 16384.
 	 * Leave unset if the device is already visible to the adb server.
 	 */
 	devicePort: number;

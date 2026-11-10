@@ -1,5 +1,5 @@
 {
-	"$schema": "https://biomejs.dev/schemas/2.5.1/schema.json",
+	"$schema": "https://biomejs.dev/schemas/2.6.3/schema.json",
 	"vcs": {
 		"enabled": true,
 		"clientKind": "git",
@@ -9,8 +9,9 @@
 		"ignoreUnknown": false,
 		"includes": [
 			"**",
-			"!apps/website/@core",
-			"!apps/website/public"
+			"!pnpm-lock.yaml",
+			"!src/api/scripting/schema.ts",
+			"!src/api/connect/schema.ts"
 		]
 	},
 	"formatter": {

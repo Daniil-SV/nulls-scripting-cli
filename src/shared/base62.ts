@@ -1,5 +1,3 @@
-const BASE = 62;
-const BASE_BIGINT = 62n;
 const ALPHABET =
 	"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
@@ -11,6 +9,16 @@ export class Base62 {
 	indices: Map<string, number>;
 
 	constructor(alphabet = ALPHABET) {
+		if (alphabet.length < 2) {
+			throw new TypeError("The alphabet must contain at least two characters.");
+		}
+
+		if (new Set(alphabet).size !== alphabet.length) {
+			throw new TypeError(
+				"The alphabet must not contain duplicate characters.",
+			);
+		}
+
 		this.alphabet = [...alphabet];
 		this.indices = new Map(
 			this.alphabet.map((character, index) => [character, index]),
@@ -42,22 +50,37 @@ export class Base62 {
 			return "";
 		}
 
+		// Preserve leading zero bytes the same way base-x does: each one maps
+		// to a leading alphabet[0] character.
+		let zeros = 0;
+		while (zeros < bytes.length && bytes[zeros] === 0) {
+			zeros++;
+		}
+
 		let value = 0n;
-		for (const byte of bytes) {
+		for (const byte of bytes.subarray(zeros)) {
 			value = (value << 8n) | BigInt(byte);
 		}
 
-		return this.encodeBigInt(value);
+		const encoded = value === 0n ? "" : this.encodeBigInt(value);
+		const zeroCharacter = this.alphabet[0] ?? "";
+
+		return zeroCharacter.repeat(zeros) + encoded;
 	}
 
 	decodeBytes(encodedString: string) {
-		const value = this.decodeBigInt(encodedString);
+		const zeroCharacter = this.alphabet[0] ?? "";
 
-		if (value === 0n) {
-			return new Uint8Array();
+		let zeros = 0;
+		while (
+			zeros < encodedString.length &&
+			encodedString[zeros] === zeroCharacter
+		) {
+			zeros++;
 		}
 
-		const bytes = [];
+		const value = this.decodeBigInt(encodedString.slice(zeros));
+		const bytes: number[] = [];
 
 		let current = value;
 
@@ -66,10 +89,14 @@ export class Base62 {
 			current >>= 8n;
 		}
 
-		return Uint8Array.from(bytes);
+		return Uint8Array.from([...new Array(zeros).fill(0), ...bytes]);
 	}
 
 	encodeInteger(integer: number) {
+		if (!Number.isSafeInteger(integer)) {
+			throw new TypeError("The integer must be a safe integer.");
+		}
+
 		if (integer < 0) {
 			throw new TypeError("The integer must be non-negative.");
 		}
@@ -78,19 +105,29 @@ export class Base62 {
 			return this.alphabet[0];
 		}
 
+		const base = this.alphabet.length;
 		let encodedString = "";
+
 		while (integer > 0) {
-			encodedString = this.alphabet[integer % BASE] + encodedString;
-			integer = Math.floor(integer / BASE);
+			encodedString = this.alphabet[integer % base] + encodedString;
+			integer = Math.floor(integer / base);
 		}
 
 		return encodedString;
 	}
 
 	decodeInteger(encodedString: string) {
+		const base = this.alphabet.length;
 		let integer = 0;
+
 		for (const character of encodedString) {
-			integer = integer * BASE + this.getIndex(character);
+			integer = integer * base + this.getIndex(character);
+
+			if (!Number.isSafeInteger(integer)) {
+				throw new TypeError(
+					"The encoded integer is too large. Use decodeBigInt instead.",
+				);
+			}
 		}
 
 		return integer;
@@ -103,7 +140,7 @@ export class Base62 {
 			);
 		}
 
-		if (bigint < 0) {
+		if (bigint < 0n) {
 			throw new TypeError("The bigint must be non-negative.");
 		}
 
@@ -111,20 +148,23 @@ export class Base62 {
 			return this.alphabet[0];
 		}
 
+		const base = BigInt(this.alphabet.length);
 		let encodedString = "";
+
 		while (bigint > 0n) {
-			encodedString =
-				this.alphabet[Number(bigint % BASE_BIGINT)] + encodedString;
-			bigint /= BASE_BIGINT;
+			encodedString = this.alphabet[Number(bigint % base)] + encodedString;
+			bigint /= base;
 		}
 
 		return encodedString;
 	}
 
 	decodeBigInt(encodedString: string) {
+		const base = BigInt(this.alphabet.length);
 		let bigint = 0n;
+
 		for (const character of encodedString) {
-			bigint = bigint * BASE_BIGINT + BigInt(this.getIndex(character));
+			bigint = bigint * base + BigInt(this.getIndex(character));
 		}
 
 		return bigint;

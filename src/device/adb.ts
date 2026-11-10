@@ -1,7 +1,9 @@
 import { spawn } from "node:child_process";
+import { dirname } from "node:path";
 import { intro, isCancel, log, outro, select } from "@clack/prompts";
 import { Adb, AdbServerClient } from "@yume-chan/adb";
 import { AdbServerNodeTcpConnector } from "@yume-chan/adb-server-node-tcp";
+import which from "which";
 import config from "@/config.js";
 
 export class AdbError extends Error {
@@ -20,6 +22,10 @@ export class AdbServer {
 
 	private cachedTransport?: Adb;
 
+	private adbPath?: string;
+
+	private adbServer?: Promise<void>;
+
 	private get config() {
 		return config.process?.adb ?? {};
 	}
@@ -35,9 +41,80 @@ export class AdbServer {
 		return `${this.deviceAddress}:${port}`;
 	}
 
+	/** Prefer adb from PATH, then the emulator directory */
+	private async findAdb(): Promise<string | undefined> {
+		if (this.adbPath !== undefined) return this.adbPath;
+
+		const global = await which("adb", { nothrow: true });
+		if (global !== null) {
+			this.adbPath = global;
+			return global;
+		}
+
+		const command = this.config.command;
+		if (command === undefined) return undefined;
+
+		const local = await which("adb", {
+			path: dirname(command),
+			nothrow: true,
+		});
+
+		if (local !== null) {
+			this.adbPath = local;
+			return local;
+		}
+
+		return undefined;
+	}
+
+	private async startAdbServer(): Promise<void> {
+		const adb = await this.findAdb();
+		if (adb === undefined) {
+			throw new AdbError(
+				"adb executable not found. Install Android Platform Tools, add adb to PATH, " +
+					"or set process.adb.command to an emulator executable whose folder contains adb.",
+			);
+		}
+
+		await new Promise<void>((resolve, reject) => {
+			const child = spawn(adb, ["start-server"], {
+				stdio: "ignore",
+				windowsHide: true,
+			});
+
+			child.once("error", (error) => {
+				reject(
+					new AdbError(`Failed to run "${adb} start-server": ${error.message}`),
+				);
+			});
+
+			child.once("close", (code) => {
+				if (code === 0) {
+					resolve();
+					return;
+				}
+
+				reject(
+					new AdbError(
+						`"${adb} start-server" exited with code ${code ?? "unknown"}`,
+					),
+				);
+			});
+		});
+	}
+
+	private ensureAdbServer(): Promise<void> {
+		this.adbServer ??= this.startAdbServer().catch((error) => {
+			this.adbServer = undefined;
+			throw error;
+		});
+
+		return this.adbServer;
+	}
+
 	/**
 	 * Ask the adb server to connect to the emulator's/platform-tools adb daemon
-	 * Without this, TCP-only emulators (e.g. MuMu) never show up in
+	 * Without this, TCP-only emulators never show up in
 	 * `host:devices-l` because nothing dials their port
 	 */
 	private async connectDevice() {
@@ -150,6 +227,7 @@ export class AdbServer {
 	}
 
 	async getDevice(silent: boolean = false) {
+		await this.ensureAdbServer();
 		await this.connectDevice();
 		const devices = await this.client.getDevices();
 		let target: AdbServerClient.Device | undefined;
@@ -166,6 +244,7 @@ export class AdbServer {
 	}
 
 	async getTransport() {
+		await this.ensureAdbServer();
 		if (this.cachedTransport !== undefined) return this.cachedTransport;
 		const device = await this.getDevice(true);
 		if (device === undefined) {
