@@ -1,28 +1,105 @@
 {
-  "name": "nulls-brawl-scripting-cli",
-  "version": "1.0.0",
-  "description": "Tool for nulls brawl scripting development",
-  "main": "dist/cli.js",
+  "name": "nulls-scripting-cli",
+  "version": "0.1.0",
+  "description": "CLI and TypeScript API for Null's Brawl scripting development",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./config": {
+      "types": "./dist/config.d.ts",
+      "import": "./dist/config.js",
+      "default": "./dist/config.js"
+    },
+    "./url": {
+      "types": "./dist/url.d.ts",
+      "import": "./dist/url.js",
+      "default": "./dist/url.js"
+    },
+    "./api": {
+      "types": "./dist/api/scripting/index.d.ts",
+      "import": "./dist/api/scripting/index.js",
+      "default": "./dist/api/scripting/index.js"
+    },
+    "./api/scripting": {
+      "types": "./dist/api/scripting/index.d.ts",
+      "import": "./dist/api/scripting/index.js",
+      "default": "./dist/api/scripting/index.js"
+    },
+    "./api/connect": {
+      "types": "./dist/api/connect/index.d.ts",
+      "import": "./dist/api/connect/index.js",
+      "default": "./dist/api/connect/index.js"
+    },
+    "./api/client": {
+      "types": "./dist/api/client.d.ts",
+      "import": "./dist/api/client.js",
+      "default": "./dist/api/client.js"
+    },
+    "./shared/deeplink": {
+      "types": "./dist/shared/deeplink.d.ts",
+      "import": "./dist/shared/deeplink.js",
+      "default": "./dist/shared/deeplink.js"
+    },
+    "./shared/auth": {
+      "types": "./dist/shared/auth.d.ts",
+      "import": "./dist/shared/auth.js",
+      "default": "./dist/shared/auth.js"
+    },
+    "./shared/scripts": {
+      "types": "./dist/shared/scripts.d.ts",
+      "import": "./dist/shared/scripts.js",
+      "default": "./dist/shared/scripts.js"
+    },
+    "./package.json": "./package.json"
+  },
   "bin": {
     "nbs": "./bin/run.js"
   },
   "files": [
-    "bin",
+    "bin/run.js",
+    "bin/run.cmd",
     "dist",
     "oclif.manifest.json"
   ],
   "scripts": {
     "generate:api": "pnpm generate:scripting && pnpm generate:connect",
-    "generate:scripting": "pnpm --package=openapi-typescript@7.13.0 --package=typescript@5.9.3 dlx openapi-typescript schema/openapi.yaml -o src/api/scripting/schema.d.ts",
-    "generate:connect": "pnpm --package=openapi-typescript@7.13.0 --package=typescript@5.9.3 dlx openapi-typescript schema/openapi.connect.yaml -o src/api/connect/schema.d.ts",
-    "build": "tsc -p tsconfig.json && tsc-alias -p tsconfig.json",
-    "prepack": "pnpm build",
-    "start": "node dist/cli.js",
+    "generate:scripting": "pnpm --package=openapi-typescript@7.13.0 --package=typescript@5.9.3 dlx openapi-typescript schema/openapi.yaml -o src/api/scripting/schema.ts",
+    "generate:connect": "pnpm --package=openapi-typescript@7.13.0 --package=typescript@5.9.3 dlx openapi-typescript schema/openapi.connect.yaml -o src/api/connect/schema.ts",
+    "build": "tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json",
+    "prepack": "pnpm run build && oclif manifest",
+    "start": "node ./bin/run.js",
     "start:dev": "pnpm build && tsx bin/dev.js"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "keywords": [
+    "nulls",
+    "nulls-brawl",
+    "brawl-stars",
+    "scripting",
+    "cli",
+    "typescript",
+    "api"
+  ],
+  "author": "Daniil SV and Nulls Community",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Daniil-SV/nulls-scripting-cli.git"
+  },
+  "homepage": "https://github.com/Daniil-SV/nulls-scripting-cli#readme",
+  "bugs": {
+    "url": "https://github.com/Daniil-SV/nulls-scripting-cli/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=22"
+  },
   "devEngines": {
     "packageManager": {
       "name": "pnpm",
@@ -64,7 +141,7 @@
     "plugins": [
       "@oclif/plugin-help"
     ],
-    "dirname": "nulls-brawl-scripting-cli",
+    "dirname": "nulls-scripting-cli",
     "topicSeparator": " ",
     "topics": {
       "content": {

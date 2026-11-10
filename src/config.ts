@@ -17,7 +17,7 @@ export interface NbsAndroidDebugBridge {
 	/**
 	 * Args which will passed along with command
 	 */
-	args: string;
+	args: string[];
 
 	defaultDevice: string;
 	waitForDevice: boolean;
