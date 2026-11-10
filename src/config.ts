@@ -2,8 +2,9 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import {
 	type LilconfigResult,
+	lilconfig,
 	lilconfigSync,
-	type OptionsSync,
+	type Options,
 } from "lilconfig";
 import type { BattleParameterValue } from "./shared/deeplink.js";
 
@@ -80,15 +81,31 @@ function initializeBaseConfig() {
 }
 
 const config: Partial<NbsConfig> = {};
-export function initializeConfig(path?: string) {
-	const options: OptionsSync = {};
-	const searcher = lilconfigSync("nbs", options);
+export async function initializeConfig(path?: string) {
+	const options: Options = {
+		searchPlaces: [
+			".nbsrc",
+			".nbsrc.json",
+			".nbsrc.js",
+			".nbsrc.cjs",
+			".nbsrc.mjs",
+			".config/nbsrc",
+			".config/nbsrc.json",
+			".config/nbsrc.js",
+			".config/nbsrc.cjs",
+			".config/nbsrc.mjs",
+			"nbs.config.js",
+			"nbs.config.cjs",
+			"nbs.config.mjs",
+		],
+	};
+	const searcher = lilconfig("nbs", options);
 
 	let result: LilconfigResult;
 	if (path !== undefined && existsSync(path)) {
-		result = searcher.load(path);
+		result = await searcher.load(path);
 	} else {
-		result = searcher.search();
+		result = await searcher.search();
 	}
 
 	const base = initializeBaseConfig();
@@ -107,9 +124,7 @@ export function resolvePath(override?: string): string {
 	let path: string | undefined;
 	if (override !== undefined) {
 		path = resolve(override);
-	}
-
-	if (config.path !== undefined) {
+	} else if (config.path !== undefined) {
 		path = resolve(config.path);
 	}
 

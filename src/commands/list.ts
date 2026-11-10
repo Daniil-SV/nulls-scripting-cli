@@ -1029,7 +1029,7 @@ export default class List extends BaseCommand {
 	@RequireLogin
 	public async run(): Promise<void> {
 		const { flags } = await this.parse(List);
-		initializeConfig(flags.project);
+		await initializeConfig(flags.project);
 
 		const interactive =
 			!flags.json && process.stdin.isTTY && process.stdout.isTTY;

@@ -34,7 +34,7 @@ export default class Publish extends BaseCommand {
 	@RequireLogin
 	public async run(): Promise<void> {
 		const { args, flags } = await this.parse(Publish);
-		initializeConfig(flags.project);
+		await initializeConfig(flags.project);
 
 		const name = args.name ?? config.name;
 		if (name === undefined) throw new Error("Failed to resolve script name");

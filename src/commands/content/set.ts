@@ -112,7 +112,7 @@ export default class ContentSet extends BaseCommand {
 	@RequireLogin
 	public async run(): Promise<void> {
 		const { args, flags } = await this.parse(ContentSet);
-		initializeConfig(flags.project);
+		await initializeConfig(flags.project);
 
 		const name = flags.name ?? config.name;
 		if (name === undefined) {
