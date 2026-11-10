@@ -76,8 +76,14 @@ export default class ContentSet extends BaseCommand {
 
 	private async startWatch(name: string, path: string, open: boolean) {
 		const spin = spinner();
-		spin.start("Running device...");
-		await device.ensureDevice();
+
+		// Device initialization
+		if (open) {
+			spin.start("Running device...");
+			await device.ensureDevice();
+		} else {
+			spin.start("Starting watching...");
+		}
 
 		spin.message("Watching for file changes...");
 		watcher.subscribe(dirname(path), async (error, events) => {

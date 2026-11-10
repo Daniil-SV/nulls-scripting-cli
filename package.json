@@ -157,9 +157,6 @@
 			"content": {
 				"description": "manage scripts content"
 			}
-		},
-		"hooks": {
-			"init": "./dist/hooks/init/init"
 		}
 	}
 }
