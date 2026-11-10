@@ -115,13 +115,13 @@
 	"packageManager": "pnpm@12.16.1",
 	"type": "module",
 	"devDependencies": {
-		"@biomejs/biome": "2.6.3",
+		"@biomejs/biome": "2.6.6",
 		"@types/node": "^26.6.6",
 		"@types/uuid-validate": "^0.0.3",
 		"@types/which": "^3.0.4",
 		"oclif": "^6.0.15",
 		"openapi-typescript": "^7.13.0",
-		"tsc-alias": "^1.9.9",
+		"tsc-alias": "^1.9.10",
 		"tsx": "^4.23.15",
 		"typescript": "^7.0.2",
 		"vitest": "^4.1.12"
@@ -129,8 +129,8 @@
 	"dependencies": {
 		"@bomb.sh/tty": "^0.10.0",
 		"@clack/prompts": "^1.8.1",
-		"@oclif/core": "^5.1.10",
-		"@oclif/plugin-help": "^7.0.6",
+		"@oclif/core": "^5.1.11",
+		"@oclif/plugin-help": "^7.0.7",
 		"@parcel/watcher": "^2.6.0",
 		"@yume-chan/adb": "^2.6.4",
 		"@yume-chan/adb-server-node-tcp": "^2.5.2",
