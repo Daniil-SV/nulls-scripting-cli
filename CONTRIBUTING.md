@@ -43,4 +43,5 @@ Use the GitHub issue templates. For security issues, follow
 ## Releasing
 
 Configure Trusted Publishing for `.github/workflows/release.yml` on npmjs.com.
-To release, bump the version, push, and create a GitHub release.
+To release, update `CHANGELOG.md`, bump the version, push, and create a GitHub
+release.
