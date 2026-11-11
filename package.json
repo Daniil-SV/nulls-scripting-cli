@@ -65,6 +65,7 @@
 		"bin/run.cmd",
 		"dist",
 		"oclif.manifest.json",
+		"pnpm-workspace.yaml",
 		"CHANGELOG.md"
 	],
 	"scripts": {
@@ -80,7 +81,12 @@
 		"prepack": "pnpm run build && oclif manifest",
 		"prepublishOnly": "pnpm lint && pnpm typecheck && pnpm test",
 		"start": "node ./bin/run.js",
-		"start:dev": "pnpm build && tsx bin/dev.js"
+		"start:dev": "pnpm build && tsx bin/dev.js",
+		"pack:tarballs": "oclif pack tarballs --xz --parallel --prune-lockfiles",
+		"pack:win": "oclif pack win --prune-lockfiles --defender-exclusion unchecked",
+		"pack:macos": "oclif pack macos --prune-lockfiles",
+		"pack:deb": "oclif pack deb --prune-lockfiles",
+		"release": "node scripts/release.mjs"
 	},
 	"keywords": [
 		"nulls",
@@ -153,6 +159,10 @@
 		],
 		"dirname": "nulls-scripting-cli",
 		"topicSeparator": " ",
+		"macos": {
+			"identifier": "com.daniilsv.nulls-scripting-cli"
+		},
+		"nsisCustomization": "scripts/nsis.nsi",
 		"topics": {
 			"content": {
 				"description": "manage scripts content"

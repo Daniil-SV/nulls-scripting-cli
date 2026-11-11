@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 jobs:
-  check:
+  lint:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -33,11 +33,36 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
       - name: Build
         run: pnpm build
 
       - name: Test
         run: pnpm test
+
+      - name: Smoke test CLI
+        run: node ./bin/run.js --version
 
       - name: Check package contents
         run: npm pack --dry-run

@@ -33,3 +33,68 @@ jobs:
 
       - name: Publish to npm
         run: npm publish --provenance --access public
+
+  binaries:
+    if: github.event_name == 'release' || github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux
+            os: ubuntu-latest
+            pack: pnpm pack:deb && pnpm pack:tarballs
+            artifacts: dist/*.tar.gz dist/*.tar.xz dist/deb/*.deb
+          # Windows installers are cross-built on Ubuntu with NSIS + 7zip, as
+          # recommended by the oclif docs — the Windows System32 bsdtar lacks
+          # the --force-local flag oclif passes to GNU tar.
+          - target: win
+            os: ubuntu-latest
+            pack: pnpm pack:win
+            artifacts: dist/win32/*.exe
+          - target: macos
+            os: macos-latest
+            pack: pnpm pack:macos
+            artifacts: dist/macos/*.pkg
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install NSIS and 7zip
+        if: matrix.target == 'win'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nsis p7zip-full
+
+      # p7zip-full provides 7z, which oclif needs to pack win32 tarballs;
+      # apt-utils provides apt-ftparchive for `oclif pack deb` (preinstalled
+      # on GitHub runners, absent from act's containers)
+      - name: Install deb packaging tools
+        if: matrix.target == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y apt-utils p7zip-full
+
+      - name: Build ${{ matrix.target }} binaries
+        run: ${{ matrix.pack }}
+
+      - name: Upload binaries to release
+        if: github.event_name == 'release'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" ${{ matrix.artifacts }} --clobber

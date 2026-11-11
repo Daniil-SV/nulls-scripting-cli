@@ -1,0 +1,12 @@
+# act configuration for running CI locally with Docker (https://github.com/nektos/act)
+#
+# act can only run Linux jobs — Windows and macOS matrix legs are skipped
+# locally and executed by GitHub Actions instead. Filter jobs/matrices:
+#
+#   act push -j lint
+#   act push -j build --matrix os:ubuntu-latest
+#   act workflow_dispatch -j binaries --matrix target:linux
+
+-P ubuntu-latest=catthehacker/ubuntu:act-latest
+-P ubuntu-24.04=catthehacker/ubuntu:act-latest
+-P ubuntu-22.04=catthehacker/ubuntu:act-latest
