@@ -79,6 +79,7 @@
 		"test:watch": "vitest",
 		"typecheck": "tsc -p tsconfig.json --noEmit --composite false --incremental false",
 		"prepack": "pnpm run build && oclif manifest",
+		"pretarball": "node -e \"require('node:fs').rmSync('node_modules/.pnpm-workspace-state-v1.json', { force: true })\"",
 		"prepublishOnly": "pnpm lint && pnpm typecheck && pnpm test",
 		"start": "node ./bin/run.js",
 		"start:dev": "pnpm build && tsx bin/dev.js",

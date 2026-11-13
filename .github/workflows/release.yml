@@ -89,8 +89,34 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y apt-utils p7zip-full
 
+      # oclif chowns the deb staging tree to root but runs dpkg-deb as the
+      # runner user. pnpm creates node_modules/.pnpm-workspace-state-v1.json
+      # with mode 0600, so tar fails with "Permission denied". The package
+      # pretarball script deletes that file before packing.
       - name: Build ${{ matrix.target }} binaries
         run: ${{ matrix.pack }}
+
+      # oclif names installers by architecture only (`...-x64.exe`,
+      # `...-arm64.pkg`). Add the platform so the right download is obvious.
+      - name: Add platform to installer names
+        shell: bash
+        run: |
+          case "${{ matrix.target }}" in
+            win)
+              for file in dist/win32/*.exe; do
+                if [[ "$file" != *-windows-* ]]; then
+                  mv "$file" "${file%-*}-windows-${file##*-}"
+                fi
+              done
+              ;;
+            macos)
+              for file in dist/macos/*.pkg; do
+                if [[ "$file" != *-macos-* ]]; then
+                  mv "$file" "${file%-*}-macos-${file##*-}"
+                fi
+              done
+              ;;
+          esac
 
       - name: Upload binaries to release
         if: github.event_name == 'release'
