@@ -2,6 +2,7 @@ import {
 	mkdirSync,
 	mkdtempSync,
 	readFileSync,
+	realpathSync,
 	rmSync,
 	writeFileSync,
 } from "node:fs";
@@ -17,9 +18,15 @@ const V7_ID = "01a1cf19-3378-709c-b4dd-6e03f561dc93";
 
 const directories: string[] = [];
 
-function temporaryFile(name: string, content: string): string {
-	const directory = mkdtempSync(join(tmpdir(), "nbs-config-"));
+function temporaryDirectory(): string {
+	const directory = realpathSync(mkdtempSync(join(tmpdir(), "nbs-config-")));
 	directories.push(directory);
+
+	return directory;
+}
+
+function temporaryFile(name: string, content: string): string {
+	const directory = temporaryDirectory();
 
 	const filepath = join(directory, name);
 	writeFileSync(filepath, content, { encoding: "utf8" });
@@ -247,8 +254,7 @@ describe("NbsConfigLoader.patch", () => {
 	});
 
 	it("writes a property into the config file that defined it", async () => {
-		const directory = mkdtempSync(join(tmpdir(), "nbs-config-"));
-		directories.push(directory);
+		const directory = temporaryDirectory();
 
 		const project = `name = "My script"\nid = "${NEW_ID}"\n`;
 		const local = "[process.adb]\ndevicePort = 5555\n";
@@ -281,8 +287,7 @@ describe("NbsConfigLoader.patch", () => {
 
 describe("NbsConfigLoader.initialize", () => {
 	it("loads a toml config", async () => {
-		const directory = mkdtempSync(join(tmpdir(), "nbs-config-"));
-		directories.push(directory);
+		const directory = temporaryDirectory();
 
 		writeFileSync(
 			join(directory, "nbsproject.toml"),
@@ -306,8 +311,7 @@ describe("NbsConfigLoader.initialize", () => {
 	});
 
 	it("loads an extension-less config as toml", async () => {
-		const directory = mkdtempSync(join(tmpdir(), "nbs-config-"));
-		directories.push(directory);
+		const directory = temporaryDirectory();
 
 		writeFileSync(
 			join(directory, "nbsproject"),
@@ -337,8 +341,7 @@ describe("NbsConfigLoader.initialize", () => {
 	});
 
 	it("loads a config with a UUIDv7 script id", async () => {
-		const directory = mkdtempSync(join(tmpdir(), "nbs-config-"));
-		directories.push(directory);
+		const directory = temporaryDirectory();
 
 		writeFileSync(
 			join(directory, "nbsproject.toml"),
@@ -360,8 +363,7 @@ describe("NbsConfigLoader.initialize", () => {
 	});
 
 	it("resolves the script path relative to the config file", async () => {
-		const directory = mkdtempSync(join(tmpdir(), "nbs-config-"));
-		directories.push(directory);
+		const directory = temporaryDirectory();
 
 		const nested = join(directory, "nested");
 		mkdirSync(nested);
@@ -387,8 +389,7 @@ describe("NbsConfigLoader.initialize", () => {
 	});
 
 	it("uses an explicit script path override from the working directory", async () => {
-		const directory = mkdtempSync(join(tmpdir(), "nbs-config-"));
-		directories.push(directory);
+		const directory = temporaryDirectory();
 
 		writeFileSync(join(directory, "old.lua"), "", { encoding: "utf8" });
 		writeFileSync(join(directory, "new.lua"), "", { encoding: "utf8" });
@@ -412,8 +413,7 @@ describe("NbsConfigLoader.initialize", () => {
 	});
 
 	it("ignores package.json without an nbs field", async () => {
-		const directory = mkdtempSync(join(tmpdir(), "nbs-config-"));
-		directories.push(directory);
+		const directory = temporaryDirectory();
 
 		writeFileSync(join(directory, "script.lua"), "", { encoding: "utf8" });
 		writeFileSync(
@@ -440,8 +440,7 @@ describe("NbsConfigLoader.initialize", () => {
 	});
 
 	it("resolves a package.json main relative to package.json", async () => {
-		const directory = mkdtempSync(join(tmpdir(), "nbs-config-"));
-		directories.push(directory);
+		const directory = temporaryDirectory();
 
 		const nested = join(directory, "nested");
 		mkdirSync(nested);
