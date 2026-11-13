@@ -1,10 +1,135 @@
 import { spawn } from "node:child_process";
-import { dirname } from "node:path";
-import { intro, isCancel, log, outro, select } from "@clack/prompts";
+import { existsSync } from "node:fs";
+import { dirname, join } from "node:path";
+import {
+	confirm,
+	intro,
+	isCancel,
+	log,
+	outro,
+	select,
+	text,
+} from "@clack/prompts";
 import { Adb, AdbServerClient } from "@yume-chan/adb";
 import { AdbServerNodeTcpConnector } from "@yume-chan/adb-server-node-tcp";
 import which from "which";
-import config from "@/config.js";
+import config, { type NbsAndroidDebugBridge } from "@/config.js";
+import { setupMuMuAdb } from "./mumu.js";
+
+async function setupAdbManual(): Promise<
+	Partial<NbsAndroidDebugBridge> | undefined
+> {
+	const config: Partial<NbsAndroidDebugBridge> = {};
+	const command = await text({
+		message: "Command to run adb with (Emulator path, script, etc.)",
+		validate: (value) => {
+			const input = (value ?? "").trim();
+			if (input === "") return undefined;
+
+			// Allow commands from PATH, but verify explicit file paths
+			if ((input.includes("/") || input.includes("\\")) && !existsSync(input)) {
+				return `File "${input}" does not exist`;
+			}
+
+			return undefined;
+		},
+	});
+
+	if (!isCancel(command) && command.trim().length !== 0) {
+		config.command = command.trim();
+	}
+
+	if (config.command !== undefined) {
+		const args = await text({
+			message: "Args to run command with (comma-separated: arg1,arg2...)",
+		});
+
+		if (!isCancel(args) && args.trim().length !== 0) {
+			config.args = args
+				.split(",")
+				.map((argument) => argument.trim())
+				.filter((argument) => argument !== "");
+		}
+	}
+
+	const address = await text({
+		message: "Address of device to listen from",
+		placeholder: "127.0.0.1",
+	});
+
+	if (!isCancel(address) && address.trim().length !== 0) {
+		config.deviceAddress = address.trim();
+	}
+
+	const port = await text({
+		message: "Port of device to listen from",
+		placeholder: "5555",
+		validate: (value) => {
+			const input = (value ?? "").trim();
+			if (input === "") return undefined;
+
+			const number = Number(input);
+			if (!Number.isInteger(number) || number <= 0 || number > 65535) {
+				return "Invalid port number";
+			}
+
+			return undefined;
+		},
+	});
+
+	if (!isCancel(port) && port.trim().length !== 0) {
+		config.devicePort = Number(port);
+	}
+
+	const name = await text({
+		message: "Name of target device (leave empty to connect to any available)",
+	});
+
+	if (!isCancel(name) && name.trim().length !== 0) {
+		config.defaultDevice = name.trim();
+	}
+
+	const wait = await confirm({
+		message:
+			"Do you want to wait until device is found? Useful when your script or emulator needs some time to prepare",
+	});
+
+	if (!isCancel(wait)) {
+		config.waitForDevice = wait;
+	}
+
+	return Object.keys(config).length === 0 ? undefined : config;
+}
+
+export async function createAdbConfig(): Promise<
+	Partial<NbsAndroidDebugBridge> | undefined
+> {
+	const method = await select({
+		message: "Select setup preset",
+		options: [
+			{
+				value: "manual",
+				label: "Manual",
+				hint: "Manually setting up adb host ip, ports, etc.",
+			},
+			{
+				value: "mumu",
+				label: "MuMuPlayer",
+				hint: "Use MuMuPlayer emulator as a device",
+			},
+		],
+	});
+
+	if (isCancel(method)) return undefined;
+
+	switch (method) {
+		case "manual":
+			return setupAdbManual();
+
+		case "mumu":
+			return setupMuMuAdb();
+	}
+}
 
 export class AdbError extends Error {
 	constructor(message: string) {
@@ -54,14 +179,40 @@ export class AdbServer {
 		const command = this.config.command;
 		if (command === undefined) return undefined;
 
+		const directory = dirname(command);
 		const local = await which("adb", {
-			path: dirname(command),
+			path: directory,
 			nothrow: true,
 		});
 
 		if (local !== null) {
 			this.adbPath = local;
 			return local;
+		}
+
+		// MuMuPlayer for macOS keeps adb inside its nested emulator bundle
+		const bundled = [
+			join(directory, "adb"),
+			join(directory, "tools", "adb"),
+			join(directory, "..", "Resources", "adb"),
+			join(directory, "..", "Resources", "tools", "adb"),
+			join(directory, "MuMuEmulator.app", "Contents", "MacOS", "adb"),
+			join(directory, "MuMuEmulator.app", "Contents", "MacOS", "tools", "adb"),
+			join(directory, "..", "MuMuEmulator.app", "Contents", "MacOS", "adb"),
+			join(
+				directory,
+				"..",
+				"MuMuEmulator.app",
+				"Contents",
+				"MacOS",
+				"tools",
+				"adb",
+			),
+		].find(existsSync);
+
+		if (bundled !== undefined) {
+			this.adbPath = bundled;
+			return bundled;
 		}
 
 		return undefined;
@@ -130,11 +281,11 @@ export class AdbServer {
 		}
 	}
 
-	ensureRunning() {
+	ensureRunning(silent: boolean = false) {
 		const command = this.config.command;
 		if (command === undefined) return;
 
-		log.step(`Running ${command}`);
+		if (!silent) log.step(`Running ${command}`);
 		const child = spawn(command, (this.config.args ?? []) as string[], {
 			detached: true,
 			stdio: "ignore",
@@ -256,8 +407,13 @@ export class AdbServer {
 		return this.cachedTransport;
 	}
 
-	async openUrl(url: string) {
-		intro("adb");
+	async openUrl(url: string, silent: boolean = false) {
+		if (!silent) intro("adb");
+
+		// The adb subprocess transport joins arguments and runs them through a
+		// shell, so the URL must be quoted. Otherwise `&` in deeplinks splits
+		// the command and the intent is launched with a truncated URL.
+		const quotedUrl = `'${url.replace(/'/g, `'\\''`)}'`;
 
 		await this.execute([
 			"am",
@@ -266,9 +422,9 @@ export class AdbServer {
 			"-a",
 			"android.intent.action.VIEW",
 			"-d",
-			`'${url.replace("'", "'\\''")}'`,
+			quotedUrl,
 		]);
 
-		outro("intent started");
+		if (!silent) outro("intent started");
 	}
 }

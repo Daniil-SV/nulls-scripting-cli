@@ -1,37 +1,24 @@
-import { readFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { basename, dirname } from "node:path";
 import { log, spinner } from "@clack/prompts";
-import { Args, Flags } from "@oclif/core";
+import { Flags } from "@oclif/core";
 import watcher from "@parcel/watcher";
-import Api from "@/api/scripting/index.js";
-import config, { initializeConfig, resolvePath } from "@/config.js";
+import config from "@/config.js";
 import device from "@/device/index.js";
 import { RequireLogin } from "@/shared/auth.js";
 import { BaseCommand } from "@/shared/command.js";
+import { setScriptContent } from "@/shared/content.js";
 import { buildBattleLink } from "@/shared/deeplink.js";
-import { resolveScriptIdOrCreate } from "@/shared/scripts.js";
 import { clearScreen } from "@/shared/terminal.js";
 
 export default class ContentSet extends BaseCommand {
-	static override args = {
-		path: Args.file({
-			description: "Script file path",
-			required: false,
-			exists: true,
-		}),
-	};
-
 	static override description = "Set script content";
 	static override examples = [
-		'<%= config.bin %> <%= command.id %> --id "My Hello World" "function tick() log(\'hello world\') end"',
+		"<%= config.bin %> <%= command.id %>",
+		'<%= config.bin %> <%= command.id %> --id "My Hello World" --path ./script.luau',
+		"<%= config.bin %> <%= command.id %> --watch --open",
 	];
 
 	static override flags = {
-		name: Flags.string({
-			name: "UUID or name",
-			description: "Script UUID or name to set content for",
-			required: false,
-		}),
 		watch: Flags.boolean({
 			name: "Watch for file changes",
 			char: "w",
@@ -48,89 +35,119 @@ export default class ContentSet extends BaseCommand {
 
 	private scriptId!: string;
 
-	static async setContent(path: string, id: string) {
-		let content = readFileSync(path, { encoding: "utf8" });
-		content = content.replace(/^\uFEFF/, "");
+	protected async openScript(silent = false) {
+		if (!silent) clearScreen();
 
-		const scriptId = await resolveScriptIdOrCreate(id, content);
-		if (scriptId !== undefined) {
-			await Api.put("/scripts/{scriptId}/content", {
-				params: { path: { scriptId } },
-				body: { content },
-			});
-		}
-
-		return scriptId;
-	}
-
-	protected async openScript() {
-		clearScreen();
 		const url = await buildBattleLink({
 			scriptId: this.scriptId,
 			parameters: config.parameters ?? [],
 		});
 
-		await device.openUrl(url);
-		clearScreen();
+		await device.openUrl(url, silent);
+
+		if (!silent) clearScreen();
 	}
 
-	private async startWatch(name: string, path: string, open: boolean) {
+	private async startWatch(scriptId: string, path: string, open: boolean) {
 		const spin = spinner();
+		const name = basename(path);
+		let lastUpdate: string | undefined;
+
+		const showWatching = () => {
+			spin.message(
+				lastUpdate === undefined
+					? `Watching ${name}...`
+					: `Watching ${name} · updated ${lastUpdate}`,
+			);
+		};
 
 		// Device initialization
 		if (open) {
-			spin.start("Running device...");
-			await device.ensureDevice();
+			spin.start("Preparing device...");
+
+			try {
+				await device.ensureDevice(true);
+			} catch (error) {
+				spin.error(`Device setup failed: ${(error as Error).message}`);
+				throw error;
+			}
 		} else {
-			spin.start("Starting watching...");
+			spin.start(`Watching ${name}...`);
 		}
 
-		spin.message("Watching for file changes...");
-		watcher.subscribe(dirname(path), async (error, events) => {
-			if (error) throw error;
+		// File events can arrive faster than an upload + intent finishes, so
+		// process them one at a time instead of interleaving spinner updates
+		let queue = Promise.resolve();
 
-			for (const event of events) {
-				if (event.path !== path) continue;
-				if (event.type === "delete") continue;
+		const update = async () => {
+			spin.message(`Change detected · uploading ${name}...`);
 
-				spin.message("Found changes. Updating...");
-				await ContentSet.setContent(event.path, name);
-				if (open) this.openScript();
-				spin.message("Continue watching...");
-			}
-		});
+			try {
+				await setScriptContent(path, scriptId);
+				lastUpdate = new Date().toLocaleTimeString();
 
-		if (open) {
-			while (true) {
-				const running = await device.ensureNullsRunning();
-
-				if (!running) {
-					spin.message("Application is not running, reloading...");
-					await this.openScript();
-					spin.message("Continue watching...");
+				if (open) {
+					spin.message("Opening script on device...");
+					await this.openScript(true);
 				}
 
-				await new Promise((resolve) => setTimeout(resolve, 1500));
+				showWatching();
+			} catch (error) {
+				spin.message(`Update failed: ${(error as Error).message}`);
 			}
+		};
+
+		watcher.subscribe(dirname(path), (error, events) => {
+			if (error) {
+				spin.message(`Watcher error: ${error.message}`);
+				return;
+			}
+
+			const changed = events.some(
+				(event) => event.path === path && event.type !== "delete",
+			);
+			if (!changed) return;
+
+			queue = queue.then(update);
+		});
+
+		showWatching();
+
+		if (!open) return;
+
+		while (true) {
+			try {
+				const running = await device.ensureNullsRunning();
+				if (!running) {
+					spin.message("Nulls is not running · launching...");
+					await this.openScript(true);
+					showWatching();
+				}
+			} catch (error) {
+				spin.message(`Device check failed: ${(error as Error).message}`);
+			}
+
+			await new Promise((resolve) => setTimeout(resolve, 1500));
 		}
 	}
 
 	@RequireLogin
 	public async run(): Promise<void> {
-		const { args, flags } = await this.parse(ContentSet);
-		await initializeConfig(flags.project);
+		const { flags } = await this.parse(ContentSet);
+		await config.initialize(flags);
+		await config.ensureWritable();
 
-		const name = flags.name ?? config.name;
-		if (name === undefined) {
-			this.error("Failed to resolve script name");
+		if (config.path === undefined) {
+			this.error(
+				"Script path is not configured. Set `path` in the config or pass `--path`.",
+			);
 		}
 
-		const path = resolvePath(args.path);
-		log.step(`Updating from "${path}"`);
+		log.step(`Updating from "${config.path}"`);
 
-		this.scriptId = await ContentSet.setContent(path, name);
+		this.scriptId = await setScriptContent(config.path, config.id);
 		if (flags.watch) {
-			await this.startWatch(name, path, flags.open);
+			await this.startWatch(config.id, config.path, flags.open);
 		} else if (flags.open) {
 			await device.ensureDevice();
 			await this.openScript();

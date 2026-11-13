@@ -102,7 +102,7 @@ export class Base62 {
 		}
 
 		if (integer === 0) {
-			return this.alphabet[0];
+			return this.alphabet[0] ?? "";
 		}
 
 		const base = this.alphabet.length;
@@ -145,7 +145,7 @@ export class Base62 {
 		}
 
 		if (bigint === 0n) {
-			return this.alphabet[0];
+			return this.alphabet[0] ?? "";
 		}
 
 		const base = BigInt(this.alphabet.length);

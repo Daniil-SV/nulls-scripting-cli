@@ -19,4 +19,3 @@ oclif.manifest.json
 .idea/
 .DS_Store
 Thumbs.db
-/.nbsrc.json

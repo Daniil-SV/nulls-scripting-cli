@@ -1,11 +1,12 @@
 import { box } from "@clack/prompts";
-import { Flags } from "@oclif/core";
-import Api, { type ScriptSummary } from "@/api/scripting/index.js";
+import Api from "@/api/scripting/index.js";
+import config from "@/config.js";
 import { RequireLogin } from "@/shared/auth.js";
 import { BaseCommand } from "@/shared/command.js";
 import { formatCreateDate, formatPublishDate } from "@/shared/format.js";
-import { findScript } from "@/shared/scripts.js";
+import { findScript, resolveScript } from "@/shared/scripts.js";
 import { clearScreen } from "@/shared/terminal.js";
+import { isUuid } from "@/shared/uuid.js";
 
 const PANEL_BG = "\x1b[48;2;20;23;31m";
 const RESET = "\x1b[0m";
@@ -36,45 +37,30 @@ export default class ContentGet extends BaseCommand {
 	static override args = {};
 	static override description = "Get content of script";
 	static override examples = [
-		'<%= config.bin %> <%= command.id %> -n "hello World"',
+		'<%= config.bin %> <%= command.id %> --id "minimap"',
 	];
-	static override flags = {
-		name: Flags.string({
-			char: "n",
-			name: "name",
-			required: false,
-			description: "Script name to get content from",
-		}),
-
-		uuid: Flags.string({
-			char: "u",
-			name: "uuid",
-			required: false,
-			description: "Script uuid to get content from",
-		}),
-	};
 
 	@RequireLogin
 	public async run(): Promise<void> {
 		const { flags } = await this.parse(ContentGet);
+		await config.initialize({ project: flags.project });
 
-		let uuid = flags.uuid;
-		let summary: ScriptSummary | undefined;
-		if (flags.name !== undefined) {
-			summary = await findScript(flags.name);
-			uuid = summary?.script_id;
+		const target = flags.id ?? config.id ?? config.name;
+		if (target === undefined) {
+			this.error(
+				"Script UUID or name is required. Pass `--id` or set `id` in the config.",
+			);
+		}
+
+		const summary = isUuid(target)
+			? await resolveScript(target, "r")
+			: await findScript(target);
+
+		if (summary === undefined) {
+			this.error(`Script "${target}" not found`);
 		}
 
 		clearScreen();
-		if (uuid === undefined) {
-			this.error("UUID or name is required to get script content");
-		}
-
-		if (summary === undefined) {
-			summary = await Api.get("/scripts/{scriptId}", {
-				params: { path: { scriptId: uuid } },
-			});
-		}
 
 		box(
 			[
@@ -91,7 +77,7 @@ export default class ContentGet extends BaseCommand {
 		);
 
 		const { content } = await Api.get("/scripts/{scriptId}/content", {
-			params: { path: { scriptId: uuid } },
+			params: { path: { scriptId: summary.script_id } },
 		});
 		this.log(`\n${renderContent(content)}`);
 	}

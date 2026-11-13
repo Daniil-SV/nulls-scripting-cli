@@ -9,6 +9,7 @@ import { SCRIPTING_API, SCRIPTING_CLIENT_ID } from "@/url.js";
 import type { components, paths } from "./schema.js";
 
 export type ScriptSummary = components["schemas"]["ScriptSummary"];
+export type ScriptParameter = components["schemas"]["ScriptParameter"];
 
 export class ScriptingAPIError extends Error {
 	constructor(

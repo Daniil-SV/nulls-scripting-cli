@@ -1,0 +1,47 @@
+name = "My awesome script"
+id = "01a1cfd5-0965-7d0a-8103-530b00a684a4"
+path = "hello_world.luau"
+
+[[parameters]]
+name = "levelHitPoints"
+value = 67 # SIX SEVEN OMG
+
+[[parameters]]
+name = "levelSkillWeapon"
+value = 67
+
+[[parameters]]
+name = "levelSkillUlti"
+value = 67
+
+[[parameters]]
+name = "levelServer"
+value = 67
+
+[[parameters]]
+name = "speedBuffPercent"
+value = 167
+
+[[parameters]]
+name = "reloadBuffPercent"
+value = 500
+
+[[parameters]]
+name = "disablePoison"
+value = true
+
+[[parameters]]
+name = "restrictTeamJoin"
+value = false
+
+[[parameters]]
+name = "viewSelection"
+value = true
+
+[[parameters]]
+name = "enableChat"
+value = true
+
+[[parameters]]
+name = "automaticTicks"
+value = 100

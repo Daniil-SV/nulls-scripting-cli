@@ -1,7 +1,7 @@
 {
 	"compileOnSave": true,
 	"compilerOptions": {
-		"rootDir": "src",
+		"rootDir": ".",
 		"outDir": "dist",
 		"target": "es2025",
 		"module": "nodenext",
@@ -38,6 +38,6 @@
 			"@/*": ["./src/*"]
 		}
 	},
-	"include": ["src/**/*.ts"],
+	"include": ["src/**/*.ts", "test/**/*.ts"],
 	"exclude": ["node_modules", "dist"]
 }

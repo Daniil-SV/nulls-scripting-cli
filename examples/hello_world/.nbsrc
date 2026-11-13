@@ -1,0 +1,10 @@
+# Note: keep this file in .gitignore
+# This repo keeps this one only as example
+
+[process.adb]
+command = "D:/Program Files/Netease/MuMuPlayer/nx_main/MuMuManager.exe"
+args = [ "control", "-v", "0", "launch" ]
+deviceAddress = "127.0.0.1"
+devicePort = 16384
+defaultDevice = "127.0.0.1:16384"
+waitForDevice = true

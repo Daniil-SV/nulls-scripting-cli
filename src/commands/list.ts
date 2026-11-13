@@ -27,7 +27,7 @@ import { spinner } from "@clack/prompts";
 import { Flags } from "@oclif/core";
 import openUrl from "open";
 import Api, { type ScriptSummary } from "@/api/scripting/index.js";
-import config, { initializeConfig } from "@/config.js";
+import config from "@/config.js";
 import device from "@/device/index.js";
 import { RequireLogin } from "@/shared/auth.js";
 import { BaseCommand } from "@/shared/command.js";
@@ -195,13 +195,14 @@ export default class List extends BaseCommand {
 		// device picker, so always hide the list while it runs
 		if (this.ttyActive) {
 			await this.toggleTTY();
-			await device.ensureDevice();
 
 			try {
+				await device.ensureDevice();
 				clearScreen();
 				await device.openUrl(url);
 			} finally {
-				// Always restore the list, even if opening the deeplink failed.
+				// Always restore the list, even if the device setup or opening
+				// the deeplink failed.
 				await this.toggleTTY();
 			}
 		} else {
@@ -1029,7 +1030,7 @@ export default class List extends BaseCommand {
 	@RequireLogin
 	public async run(): Promise<void> {
 		const { flags } = await this.parse(List);
-		await initializeConfig(flags.project);
+		await config.initialize(flags);
 
 		const interactive =
 			!flags.json && process.stdin.isTTY && process.stdout.isTTY;

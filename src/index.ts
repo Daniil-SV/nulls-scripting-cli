@@ -9,7 +9,7 @@ export type {
 	NbsConfig,
 	NbsProcessConfig,
 } from "./config.js";
-export { default as config, initializeConfig, resolvePath } from "./config.js";
+export { type BaseCommandFlags, default as config } from "./config.js";
 export * from "./shared/auth.js";
 export * from "./shared/deeplink.js";
 export * from "./shared/scripts.js";

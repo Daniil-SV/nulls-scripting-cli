@@ -9,9 +9,26 @@ export abstract class BaseCommand extends Command {
 			required: false,
 			helpGroup: "GLOBAL",
 		}),
+
+		id: Flags.string({
+			name: "UUID or name",
+			description: "Target script UUID or name",
+			required: false,
+		}),
+
+		path: Flags.file({
+			description: "Script file path",
+			required: false,
+			exists: true,
+		}),
 	};
 
 	protected override async catch(err: Interfaces.CommandError): Promise<void> {
+		if (process.env["NODE_ENV"] === "development") {
+			// Rethrow so we can get full stacktrace
+			throw err;
+		}
+
 		const report = describeError(err);
 
 		// Not ours (parse error, this.error(), bug) or a JSON consumer that

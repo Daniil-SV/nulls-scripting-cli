@@ -14,8 +14,6 @@ describe("public API", () => {
 			"buildShareUrl",
 			"config",
 			"decodeOptions",
-			"initializeConfig",
-			"resolvePath",
 			"run",
 			"validateParameterOverrides",
 			"BATTLE_LINK_PREFIX",

@@ -1,17 +1,27 @@
+import config from "@/config.js";
 import { AdbServer } from "./adb.js";
 
 const NULLS_PACKAGE = "daniillnull.nulls.brawlstars";
 
 class UserDevice {
-	private device: AdbServer;
+	// TODO: other platforms?
+	private _device: AdbServer | undefined;
 
-	constructor() {
-		// TODO: other platforms?
-		this.device = new AdbServer();
+	get device(): AdbServer {
+		if (this._device === undefined) {
+			if (config.process?.adb !== undefined) {
+				this._device = new AdbServer();
+			} else {
+				throw new Error("Proper device configuration not found!");
+			}
+		}
+
+		return this._device;
 	}
 
 	async ensureDevice(silent: boolean = false) {
-		this.device.ensureRunning();
+		config.ensureDevice();
+		this.device.ensureRunning(silent);
 		await this.device.getDevice(silent);
 	}
 
@@ -19,8 +29,8 @@ class UserDevice {
 		return await this.device.isAppRunning(NULLS_PACKAGE);
 	}
 
-	async openUrl(url: string) {
-		await this.device.openUrl(url);
+	async openUrl(url: string, silent: boolean = false) {
+		await this.device.openUrl(url, silent);
 	}
 }
 
