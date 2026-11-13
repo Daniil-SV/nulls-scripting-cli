@@ -1,6 +1,6 @@
 {
 	"name": "nulls-scripting-cli",
-	"version": "0.1.2",
+	"version": "0.2.0",
 	"description": "CLI for Null's Brawl scripting development",
 	"main": "dist/index.js",
 	"types": "dist/index.d.ts",
